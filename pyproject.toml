@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=69.1.1"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "glhf"
+version = "0.0a1"
+dependencies = [
+  "pygame-ce==2.4.1",
+  "python-socketio==5.11.1",
+  "ortools==9.9.3963",
+  "igraph==0.11.4",
+]
+requires-python = ">= 3.12"
+authors = [{ name = "Hong-Chang Huang", email = "seer852741@gmail.com" }]
+description = "Good luck, have fun! A generals.io bot framework."
+readme = "README.md"
+license = { file = "LICENSE" }
+keywords = ["egg", "bacon", "sausage", "tomatoes", "Lobster Thermidor"]
+classifiers = [
+  "Development Status :: 2 - Pre-Alpha",
+  "Topic :: Software Development :: Libraries",
+  "Topic :: Games/Entertainment :: Real Time Strategy",
+  "Topic :: Games/Entertainment :: Simulation",
+  "License :: OSI Approved :: GNU General Public License v2 (GPLv2)",
+  "Programming Language :: Python :: 3.12",
+]
