@@ -282,10 +282,9 @@ class Bot(BotProtocol):
                 row = map_[1]
                 size = col * row
                 graph = make_2d_grid(row, col)
-                armies = map_[2 : 2 + size]
                 terrain = map_[2 + size :]
-                mountains = [i for i, t in enumerate(terrain) if t == -2 or t == -4]
-                obstacles = [i for i in mountains if armies[i] == 0]
+                obstacles = [i for i, t in enumerate(terrain) if t == -2 or t == -4]
+                obstacles += cities
                 graph.delete_edges(_source=obstacles)
 
                 coro = asyncio.to_thread(opening_moves, generals, graph, 0)
