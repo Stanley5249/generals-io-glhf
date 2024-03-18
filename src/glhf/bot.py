@@ -292,7 +292,7 @@ class Bot(BotProtocol):
                 task.add_done_callback(lambda t: paths.extend(t.result()))
 
             elif turn == 50:
-                client.surrender()
+                await client.surrender()
 
             if paths:
                 s, path = paths[0]
