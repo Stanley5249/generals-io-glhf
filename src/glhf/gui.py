@@ -1,6 +1,7 @@
 from functools import lru_cache
 from itertools import product
 from os import PathLike
+from pathlib import Path
 from threading import Event, Thread
 from typing import IO, Sequence
 
@@ -54,17 +55,18 @@ ARROWS = "↑↓←→"
 WHITE = Color("white")
 BLACK = Color("black")
 
+path = Path(__file__).parent
 
 class CachedResource:
     __slots__ = "font_", "city", "crown", "mountain", "obstacle"
 
     def __init__(
         self,
-        font_: FileArg = "glhf/resource/Quicksand-Bold.ttf",
-        city: FileArg = "glhf/resource/city.png",
-        crown: FileArg = "glhf/resource/crown.png",
-        mountain: FileArg = "glhf/resource/mountain.png",
-        obstacle: FileArg = "glhf/resource/obstacle.png",
+        font_: FileArg = path / "resource/Quicksand-Bold.ttf",
+        city: FileArg = path / "resource/city.png",
+        crown: FileArg = path / "resource/crown.png",
+        mountain: FileArg = path / "resource/mountain.png",
+        obstacle: FileArg = path / "resource/obstacle.png",
     ) -> None:
         self.font_ = font_
         load = image.load
