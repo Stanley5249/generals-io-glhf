@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "glhf"
-version = "0.0.1.dev1"
+version = "0.0.1.dev2"
 dependencies = [
   "pygame-ce==2.4.1",
   "python-socketio[asyncio_client]==5.11.1",
