@@ -146,6 +146,13 @@ class ClientProtocol(Protocol):
     @abstractmethod
     def attack(self, start: int, end: int, is50: bool) -> asyncio.Task[None]: ...
 
+    # ============================================================
+    # run
+    # ============================================================
+
+    @abstractmethod
+    async def run(self) -> None: ...
+
 
 class BotProtocol(Protocol):
     # ============================================================
@@ -201,10 +208,7 @@ class BotProtocol(Protocol):
     # ============================================================
 
     @abstractmethod
-    def set_client(self, client: ClientProtocol) -> None: ...
-
-    @abstractmethod
-    async def run(self) -> None: ...
+    async def run(self, client: ClientProtocol) -> None: ...
 
 
 class GUIProtocol(Protocol): ...

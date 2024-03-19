@@ -29,7 +29,6 @@ class BasicClient(ClientProtocol):
         self.server = server
         self.bot = bot
         self.gui = gui
-        bot.set_client(self)
         self.uuid = uuid4()
 
     # ============================================================
@@ -106,15 +105,16 @@ class BasicClient(ClientProtocol):
         return hash(self.uuid)
 
     async def __aenter__(self) -> None:
+        self.gui.__enter__()
         await self.server.connect(self)
 
     async def __aexit__(self, exc_type, exc_val, exc_tb) -> None:
+        self.gui.__exit__(exc_type, exc_val, exc_tb)
         await self.server.disconnect(self)
 
     async def run(self) -> None:
         async with self:
-            with self.gui:
-                await self.bot.run()
+            await self.bot.run(self)
 
 
 class SocketioClient(AsyncClient, ClientProtocol):
@@ -135,7 +135,6 @@ class SocketioClient(AsyncClient, ClientProtocol):
         self.bot = bot
         self.gui = gui
 
-        bot.set_client(self)
         self.event(self.stars)
         self.event(self.rank)
         self.event(self.chat_message)
@@ -217,7 +216,7 @@ class SocketioClient(AsyncClient, ClientProtocol):
 
     def surrender(self) -> asyncio.Task[None]:
         return asyncio.create_task(self.emit("surrender"))
-    
+
     def attack(self, start: int, end: int, is50: bool) -> asyncio.Task[None]:
         return asyncio.create_task(self.emit("attack", (start, end, is50)))
 
@@ -226,13 +225,14 @@ class SocketioClient(AsyncClient, ClientProtocol):
     # ============================================================
 
     async def __aenter__(self) -> None:
+        self.gui.__enter__()
         await self.connect(WSURL, transports=["websocket"])
 
     async def __aexit__(self, exc_type, exc_val, exc_tb) -> None:
+        self.gui.__exit__(exc_type, exc_val, exc_tb)
         await self.disconnect()
         await self.wait()
 
     async def run(self) -> None:
         async with self:
-            with self.gui:
-                await self.bot.run()
+            await self.bot.run(self)

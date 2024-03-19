@@ -1,11 +1,11 @@
 import asyncio
-import secrets
+from secrets import token_urlsafe
 from collections import deque
 from itertools import accumulate, chain, pairwise
 from typing import Iterable, override
 
 import igraph as ig
-from glhf.base import BotProtocol
+from glhf.base import BotProtocol, ClientProtocol
 from glhf.bot import Bot
 from glhf.client import SocketioClient
 from glhf.gui import PygameGUI
@@ -204,10 +204,8 @@ def opening_moves(
 
 class MyBot(Bot):
     @override
-    async def run(self) -> None:
-        client = self.client
-
-        queue_id = secrets.token_urlsafe(3)
+    async def run(self, client: ClientProtocol) -> None:
+        queue_id = token_urlsafe(3)
 
         client.join_private(queue_id)
 

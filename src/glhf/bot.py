@@ -3,15 +3,14 @@ from __future__ import annotations
 from asyncio import Task, create_task
 from typing import Any
 
-from glhf.base import BotProtocol, ClientProtocol
-from glhf.helper import asyncio_eventify, asyncio_queueify
+from glhf.base import BotProtocol
+from glhf.helper import asyncio_queueify
 from glhf.typing_ import GameStartDict, GameUpdateDict, QueueUpdateDict
 
 
 class Bot(BotProtocol):
-    def set_client(self, client: ClientProtocol) -> None:
-        self.client = client
-        self.tasks: set[Task[Any]] = set()
+    def __init__(self) -> None:
+        self._tasks: set[Task[Any]] = set()
 
     # ============================================================
     # recieve
@@ -39,30 +38,21 @@ class Bot(BotProtocol):
     @asyncio_queueify
     def game_start(self, data: GameStartDict) -> GameStartDict:
         task = create_task(self.queue_update.put(None))
-        self.tasks.add(task)
-        task.add_done_callback(self.tasks.remove)
+        self._tasks.add(task)
+        task.add_done_callback(self._tasks.remove)
         return data
 
     @asyncio_queueify
     def game_update(self, data: GameUpdateDict) -> GameUpdateDict:
         return data
 
-    @asyncio_eventify
     def game_won(self) -> None:
         pass
 
-    @asyncio_eventify
     def game_lost(self) -> None:
         pass
 
     def game_over(self) -> None:
         task = create_task(self.game_update.put(None))
-        self.tasks.add(task)
-        task.add_done_callback(self.tasks.remove)
-
-    # ============================================================
-    # run
-    # ============================================================
-
-    async def run(self) -> None:
-        pass
+        self._tasks.add(task)
+        task.add_done_callback(self._tasks.remove)
