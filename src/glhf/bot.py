@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 from typing import Any
 
 from glhf.base import BotProtocol
@@ -12,7 +10,7 @@ class Bot(BotProtocol):
 
     Subclassing `Bot` provides additional functionality:
 
-    The `queue_update`, `game_start`, and `game_update` methods are enhanced with the `asyncio_queueify` decorator. This decorator transforms these methods into an async generator, which can be used in an async for loop for server update processing.
+    The `queue_update`, `game_start`, and `game_update` methods are enhanced with the `astreamify` decorator. This decorator transforms these methods into an async generator, which can be used in an async for loop for server update processing.
 
     Example:
         ```python
@@ -38,7 +36,8 @@ class Bot(BotProtocol):
 
     See Also:
         - `BotProtocol`
-        - `asyncio_queueify`
+        - `astreamify`
+        - `asignalize`
 
     """
 
@@ -77,7 +76,7 @@ class Bot(BotProtocol):
     @asignalize
     def game_won(self) -> None:
         pass
-    
+
     @asignalize
     def game_lost(self) -> None:
         pass

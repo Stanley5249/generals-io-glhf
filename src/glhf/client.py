@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 import asyncio
 from typing import Any
 from uuid import uuid4
@@ -55,7 +53,7 @@ class BasicClient(ClientProtocol):
 
     def game_start(self, data: GameStartDict, _: Any = None) -> None:
         self.bot.game_start(data)
-        self.gui.game_start.set()
+        self.gui.game_start(data)
 
     def game_update(self, data: GameUpdateDict, _: Any = None) -> None:
         self.bot.game_update(data)
@@ -171,7 +169,7 @@ class SocketioClient(AsyncClient, ClientProtocol):
 
     def game_start(self, data: GameStartDict, _: Any = None) -> None:
         self.bot.game_start(data)
-        self.gui.game_start.set()
+        self.gui.game_start(data)
 
     def game_update(self, data: GameUpdateDict, _: Any = None) -> None:
         self.bot.game_update(data)

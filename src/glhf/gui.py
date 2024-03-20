@@ -23,8 +23,8 @@ from pygame import (
 )
 
 from glhf.helper import patch
-from glhf.typing_ import GameUpdateDict
-from glhf.utils import event_method, queue_method
+from glhf.typing_ import GameStartDict, GameUpdateDict
+from glhf.utils import signalize, streamify
 
 __all__ = ("PygameGUI",)
 
@@ -338,9 +338,17 @@ class MapSprite(sprite.DirtySprite):
 class PygameGUI(Thread):
     WINDOWSIZE = 800, 600
 
-    game_update = queue_method()
-    game_start = event_method()
-    game_over = event_method()
+    @streamify
+    def game_start(self, data: GameStartDict) -> GameStartDict:
+        return data
+
+    @streamify
+    def game_update(self, data: GameUpdateDict) -> GameUpdateDict:
+        return data
+
+    @signalize
+    def game_over(self) -> None:
+        self.game_update.close()
 
     def __init__(self, **kwargs) -> None:
         super().__init__(name=f"{type(self).__name__}({id(self):X})", **kwargs)
@@ -404,7 +412,7 @@ class PygameGUI(Thread):
                 for e in event.get():
                     if e.type == pygame.QUIT:
                         return
-                if game_start.wait():
+                if game_start.get():
                     self.main(window)
         finally:
             pygame.quit()

@@ -1,4 +1,4 @@
-import asyncio
+from asyncio import create_task, run, to_thread
 from collections import deque
 from itertools import accumulate, chain, pairwise
 from secrets import token_urlsafe
@@ -202,7 +202,7 @@ def opening_moves(
     return [(time, [g_vids[v] for v in path]) for time, path in path_list]
 
 
-class MyBot(Bot):
+class OptimalOpening(Bot):
     async def run(self, client: ClientProtocol) -> None:
         queue_id = token_urlsafe(3)
         client.join_private(queue_id)
@@ -233,8 +233,8 @@ class MyBot(Bot):
                 obstacles += cities
                 graph.delete_edges(_source=obstacles)
 
-                coro = asyncio.to_thread(opening_moves, generals, graph, 0)
-                task = asyncio.create_task(coro)
+                coro = to_thread(opening_moves, generals, graph, 0)
+                task = create_task(coro)
                 task.add_done_callback(lambda t: paths.extend(t.result()))
 
             elif turn == 50:
@@ -258,7 +258,7 @@ if __name__ == "__main__":
     USERID = "123"
     USERNAME = "[BOT] 123"
 
-    bot = MyBot()
+    bot = OptimalOpening()
     gui = PygameGUI()
 
     client = SocketioClient(
@@ -268,4 +268,4 @@ if __name__ == "__main__":
         gui,
     )
 
-    asyncio.run(client.run(), debug=False)
+    run(client.run(), debug=False)
