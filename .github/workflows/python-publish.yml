@@ -8,7 +8,12 @@
 
 name: Upload Python Package
 
-on: workflow_dispatch
+on: 
+  workflow_dispatch:
+    inputs:
+      version:
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -43,3 +48,4 @@ jobs:
       uses: ncipollo/release-action@v1
       with:
         artifacts: "dist/*"
+        tag: ${{ inputs.version }}
