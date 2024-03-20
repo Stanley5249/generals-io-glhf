@@ -18,7 +18,6 @@ class Bot(BotProtocol):
     Example:
         ```python
         class MyBot(Bot):
-            @override
             async def run(self, client: ClientProtocol) -> None:
                 ...
                 # process queue updates
