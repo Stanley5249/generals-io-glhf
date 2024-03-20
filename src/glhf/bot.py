@@ -4,7 +4,7 @@ from typing import Any
 
 from glhf.base import BotProtocol
 from glhf.typing_ import GameStartDict, GameUpdateDict, QueueUpdateDict
-from glhf.utils import astreamify
+from glhf.utils import asignalize, astreamify
 
 
 class Bot(BotProtocol):
@@ -74,11 +74,14 @@ class Bot(BotProtocol):
     def game_update(self, data: GameUpdateDict) -> GameUpdateDict:
         return data
 
+    @asignalize
     def game_won(self) -> None:
         pass
-
+    
+    @asignalize
     def game_lost(self) -> None:
         pass
 
+    @asignalize
     def game_over(self) -> None:
         self.game_update.close()

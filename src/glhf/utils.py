@@ -136,17 +136,26 @@ class astreamify[T, **P, R](_WrappedMethod[T, P, R]):
         return x
 
 
-class AsyncioEvent[**P, R](AEvent):
+class _ASignal[**P, R]:
     __wrapped__: Callable[P, R]
 
     def __init__(self, wrapped: Callable[P, R]) -> None:
-        super().__init__()
         update_wrapper(self, wrapped)
+        self.event = AEvent()
 
     def __call__(self, *args: P.args, **kwargs: P.kwargs) -> R:
-        res = self.__wrapped__(*args, **kwargs)
-        self.set()
-        return res
+        self.event.set()
+        return self.__wrapped__(*args, **kwargs)
+
+    def get(self) -> bool:
+        s = self.event.is_set()
+        if s:
+            self.event.clear()
+        return s
+
+    async def wait(self) -> None:
+        await self.event.wait()
+        self.event.clear()
 
 
 class asignalize[T, **P, R](_WrappedMethod[T, P, R]):
@@ -162,7 +171,7 @@ class asignalize[T, **P, R](_WrappedMethod[T, P, R]):
         self,
         instance: T,
         owner: type[T] | None = None,
-    ) -> AsyncioEvent[P, R]: ...
+    ) -> _ASignal[P, R]: ...
 
     def __get__(
         self,
@@ -174,7 +183,7 @@ class asignalize[T, **P, R](_WrappedMethod[T, P, R]):
         try:
             x = getattr(instance, self.name)
         except AttributeError:
-            x = AsyncioEvent(partial(self.wrapped, instance))
+            x = _ASignal(partial(self.wrapped, instance))
             setattr(instance, self.name, x)
         return x
 

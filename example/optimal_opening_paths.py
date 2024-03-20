@@ -249,6 +249,8 @@ class MyBot(Bot):
                     if turn == t - 1:
                         paths.pop(0)
 
+        await self.game_over.wait()
+
         await client.leave_game()
 
 
