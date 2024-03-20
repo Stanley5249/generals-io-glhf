@@ -9,6 +9,41 @@ from glhf.typing_ import GameStartDict, GameUpdateDict, QueueUpdateDict
 
 
 class Bot(BotProtocol):
+    """The `Bot` class is a subclass of `BotProtocol`. It allows customization by overriding the `run` method for specific game interactions. Alternatively, you can create a class that adheres to the `BotProtocol` interface.
+
+    Subclassing `Bot` provides additional functionality:
+
+    The `queue_update`, `game_start`, and `game_update` methods are enhanced with the `asyncio_queueify` decorator. This decorator transforms these methods into an async generator, which can be used in an async for loop for server update processing.
+
+    Example:
+        ```python
+        class MyBot(Bot):
+            @override
+            async def run(self, client: ClientProtocol) -> None:
+                ...
+                # process queue updates
+                async for data in self.queue_update:
+                    if not data["isForcing"]:
+                        client.set_force_start(True)
+
+                # wait for game start
+                await self.game_start.wait()
+
+                # process game updates
+                map_ = []
+                cities = []
+                async for data in self.game_update:
+                    map_ = patch(map_, data["map_diff"])
+                    cities = patch(cities, data["cities_diff"])
+                ...
+        ```
+
+    See Also:
+        - `BotProtocol`
+        - `asyncio_queueify`
+
+    """
+
     def __init__(self) -> None:
         self._tasks: set[Task[Any]] = set()
 
