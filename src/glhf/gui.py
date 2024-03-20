@@ -22,8 +22,9 @@ from pygame import (
     transform,
 )
 
-from glhf.helper import event_method, patch, queue_method
+from glhf.helper import patch
 from glhf.typing_ import GameUpdateDict
+from glhf.utils import event_method, queue_method
 
 __all__ = ("PygameGUI",)
 
@@ -56,6 +57,7 @@ WHITE = Color("white")
 BLACK = Color("black")
 
 path = Path(__file__).parent
+
 
 class CachedResource:
     __slots__ = "font_", "city", "crown", "mountain", "obstacle"

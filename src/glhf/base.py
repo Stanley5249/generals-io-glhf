@@ -4,7 +4,7 @@ import asyncio
 from abc import abstractmethod
 from typing import Any, Protocol
 
-from glhf.helper import methodlike
+from glhf.utils import methodlike
 from glhf.typing_ import GameStartDict, GameUpdateDict, QueueUpdateDict
 
 __all__ = "ServerProtocol", "ClientProtocol", "BotProtocol"

@@ -1,4 +1,4 @@
-from typing import Literal, TypedDict, NamedTuple, Any
+from typing import Any, Literal, NamedTuple, TypedDict
 
 __all__ = "QueueUpdateDict", "GameStartDict", "GameUpdateDict", "GameUpdateTuple"
 

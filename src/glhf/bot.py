@@ -4,8 +4,8 @@ from asyncio import Task, create_task
 from typing import Any
 
 from glhf.base import BotProtocol
-from glhf.helper import asyncio_queueify
 from glhf.typing_ import GameStartDict, GameUpdateDict, QueueUpdateDict
+from glhf.utils import asyncio_queueify
 
 
 class Bot(BotProtocol):

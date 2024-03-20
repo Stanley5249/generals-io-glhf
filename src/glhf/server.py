@@ -11,7 +11,8 @@ import ortools.sat.python.cp_model as cp
 from socketio import AsyncClient
 
 from glhf.base import ClientProtocol, ServerProtocol
-from glhf.helper import make_diff, to_task
+from glhf.helper import make_diff
+from glhf.utils import to_task
 
 WSURL = "wss://ws.generals.io"
 BOTKEY = "sd09fjd203i0ejwi_changeme"
