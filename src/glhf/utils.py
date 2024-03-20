@@ -1,5 +1,7 @@
-from asyncio import Event as _AsyncioEvent
-from asyncio import Queue as _AsyncioQueue
+from __future__ import annotations
+
+from asyncio import Event as AEvent
+from asyncio import Queue as AQueue
 from asyncio import Task, create_task
 from collections import deque
 from functools import partial, update_wrapper, wraps
@@ -8,16 +10,13 @@ from typing import Any, Callable, Concatenate, Coroutine, Protocol, Self, overlo
 __all__ = (
     "to_task",
     "to_coro",
-    "MethodLikeProtocol",
     "methodlike",
-    "MethodLike",
-    "AsyncioQueue",
-    "asyncio_queueify",
-    "AsyncioEvent",
-    "asyncio_eventify",
-    "queue_method",
-    "event_method",
+    "astreamify",
+    "asignalize",
 )
+
+
+type MethodType[T, **P, R] = Callable[Concatenate[T, P], R]
 
 
 def to_task[**P, R](
@@ -38,10 +37,17 @@ def to_coro[**P, R](wrapped: Callable[P, R]) -> Callable[P, Coroutine[Any, Any, 
     return wrapper
 
 
-type MethodType[T, **P, R] = Callable[Concatenate[T, P], R]
+def methodlike[T, **P, R](m: MethodType[T, P, R]) -> _MethodProtocol[T, P, R]:
+    return m
 
 
-class MethodLikeProtocol[T, **P, R](Protocol):
+def _put_task[R](coro: Coroutine[Any, Any, R], tasks: set[Task[R]]) -> None:
+    task = create_task(coro)
+    tasks.add(task)
+    task.add_done_callback(tasks.remove)
+
+
+class _MethodProtocol[T, **P, R](Protocol):
     @overload
     def __get__(
         self,
@@ -59,51 +65,48 @@ class MethodLikeProtocol[T, **P, R](Protocol):
     ) -> Callable[P, R]: ...
 
 
-def methodlike[T, **P, R](m: MethodType[T, P, R]) -> MethodLikeProtocol[T, P, R]:
-    return m
-
-
-class MethodLike[T, **P, R](MethodLikeProtocol[T, P, R]):
+class _MethodLike[T, **P, R](_MethodProtocol[T, P, R]):
     def __set_name__(self, owner: type[T], name: str) -> None:
         self.name = "_" + name
 
 
-class _wrappedmethod[T, **P, R](MethodLike[T, P, R]):
+class _WrappedMethod[T, **P, R](_MethodLike[T, P, R]):
     def __init__(self, wrapped: MethodType[T, P, R]) -> None:
         self.wrapped = wrapped
 
 
-class AsyncioQueue[**P, R](_AsyncioQueue[R | None]):
+class _AStream[**P, R]:
     __wrapped__: Callable[P, R]
 
     def __init__(self, wrapped: Callable[P, R]) -> None:
-        super().__init__()
         update_wrapper(self, wrapped)
-        self._tasks: set[Task] = set()
-        self._close = _AsyncioEvent()
+        self._queue: AQueue[R | None] = AQueue()
+        self._tasks: set[Task[Any]] = set()
 
     def __call__(self, *args: P.args, **kwargs: P.kwargs) -> R:
         item = self.__wrapped__(*args, **kwargs)
-        task = create_task(self.put(item))
-        self._tasks.add(task)
-        task.add_done_callback(self._tasks.remove)
+        _put_task(self._queue.put(item), self._tasks)
         return item
 
     def __aiter__(self) -> Self:
         return self
 
     async def __anext__(self) -> R:
-        item = await self.get()
-        self.task_done()
+        q = self._queue
+        item = await q.get()
+        q.task_done()
         if item is None:
             raise StopAsyncIteration()
         return item
 
-    def close(self) -> Task[None]:
-        return create_task(self.put(None))
+    async def wait(self) -> R:
+        return await self.__anext__()
+
+    def close(self) -> None:
+        _put_task(self._queue.put(None), self._tasks)
 
 
-class asyncio_queueify[T, **P, R](_wrappedmethod[T, P, R]):
+class astreamify[T, **P, R](_WrappedMethod[T, P, R]):
     @overload
     def __get__(
         self,
@@ -116,7 +119,7 @@ class asyncio_queueify[T, **P, R](_wrappedmethod[T, P, R]):
         self,
         instance: T,
         owner: type[T] | None = None,
-    ) -> AsyncioQueue[P, R]: ...
+    ) -> _AStream[P, R]: ...
 
     def __get__(
         self,
@@ -128,12 +131,12 @@ class asyncio_queueify[T, **P, R](_wrappedmethod[T, P, R]):
         try:
             x = getattr(instance, self.name)
         except AttributeError:
-            x = AsyncioQueue(partial(self.wrapped, instance))
+            x = _AStream(partial(self.wrapped, instance))
             setattr(instance, self.name, x)
         return x
 
 
-class AsyncioEvent[**P, R](_AsyncioEvent):
+class AsyncioEvent[**P, R](AEvent):
     __wrapped__: Callable[P, R]
 
     def __init__(self, wrapped: Callable[P, R]) -> None:
@@ -146,7 +149,7 @@ class AsyncioEvent[**P, R](_AsyncioEvent):
         return res
 
 
-class asyncio_eventify[T, **P, R](_wrappedmethod[T, P, R]):
+class asignalize[T, **P, R](_WrappedMethod[T, P, R]):
     @overload
     def __get__(
         self,
@@ -188,7 +191,7 @@ class _Queue[R](deque[R]):
             return None
 
 
-class queue_method[T, R](MethodLike[T, [R], R]):
+class queue_method[T, R](_MethodLike[T, [R], R]):
     def __call__(self, instance: T, item: R) -> R:
         return self.__get__(instance)(item)
 
@@ -241,7 +244,7 @@ class _Event:
         return x
 
 
-class event_method[T](MethodLike[T, [], None]):
+class event_method[T](_MethodLike[T, [], None]):
     def __call__(self, instance: T) -> None:
         return self.__get__(instance)()
 

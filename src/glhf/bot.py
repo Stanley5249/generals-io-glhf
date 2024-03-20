@@ -1,11 +1,10 @@
 from __future__ import annotations
 
-from asyncio import Task, create_task
 from typing import Any
 
 from glhf.base import BotProtocol
 from glhf.typing_ import GameStartDict, GameUpdateDict, QueueUpdateDict
-from glhf.utils import asyncio_queueify
+from glhf.utils import astreamify
 
 
 class Bot(BotProtocol):
@@ -43,9 +42,6 @@ class Bot(BotProtocol):
 
     """
 
-    def __init__(self) -> None:
-        self._tasks: set[Task[Any]] = set()
-
     # ============================================================
     # recieve
     # ============================================================
@@ -62,21 +58,19 @@ class Bot(BotProtocol):
     def notify(self, data: Any) -> None:
         pass
 
-    @asyncio_queueify
+    @astreamify
     def queue_update(self, data: QueueUpdateDict) -> QueueUpdateDict:
         return data
 
     def pre_game_start(self) -> None:
         pass
 
-    @asyncio_queueify
+    @astreamify
     def game_start(self, data: GameStartDict) -> GameStartDict:
-        task = create_task(self.queue_update.put(None))
-        self._tasks.add(task)
-        task.add_done_callback(self._tasks.remove)
+        self.queue_update.close()
         return data
 
-    @asyncio_queueify
+    @astreamify
     def game_update(self, data: GameUpdateDict) -> GameUpdateDict:
         return data
 
@@ -87,6 +81,4 @@ class Bot(BotProtocol):
         pass
 
     def game_over(self) -> None:
-        task = create_task(self.game_update.put(None))
-        self._tasks.add(task)
-        task.add_done_callback(self._tasks.remove)
+        self.game_update.close()

@@ -211,7 +211,7 @@ class MyBot(Bot):
             if not data["isForcing"]:
                 client.set_force_start(True)
 
-        await self.game_start.get()
+        await self.game_start.wait()
 
         map_: list[int] = []
         cities: list[int] = []
