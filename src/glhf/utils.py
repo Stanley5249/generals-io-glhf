@@ -3,6 +3,7 @@ from asyncio import Queue as AQueue
 from asyncio import QueueEmpty, Task, create_task
 from functools import partial, update_wrapper, wraps
 from queue import Empty, Queue
+import re
 from threading import Event
 from typing import Any, Callable, Concatenate, Coroutine, Protocol, Self, overload
 
@@ -82,8 +83,11 @@ class _Stream[**P, R]:
             raise StopIteration()
         return item
 
-    def wait(self) -> R:
-        return self.__next__()
+    def wait(self) -> R | None:
+        q = self._queue
+        item = q.get()
+        q.task_done()
+        return item
 
     def get(self) -> R | None:
         q = self._queue
@@ -209,8 +213,11 @@ class _AStream[**P, R]:
             raise StopAsyncIteration()
         return item
 
-    async def wait(self) -> R:
-        return await self.__anext__()
+    async def wait(self) -> R | None:
+        q = self._queue
+        item = await q.get()
+        q.task_done()
+        return item
 
     def get(self) -> R | None:
         q = self._queue

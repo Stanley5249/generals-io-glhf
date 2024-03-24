@@ -351,7 +351,7 @@ class PygameGUI(Thread):
         self.game_update.close()
 
     def __init__(self, **kwargs) -> None:
-        super().__init__(name=f"{type(self).__name__}({id(self):X})", **kwargs)
+        super().__init__(name=f"{type(self).__name__}-{id(self):X}", **kwargs)
         self.quit = Event()
 
     def __enter__(self) -> None:
@@ -396,7 +396,7 @@ class PygameGUI(Thread):
 
             rects = group.draw(window)
             if rects:
-                pygame.display.update(rects)
+                display.update(rects)
 
             clock.tick(60)
             # print(f"\r{clock.get_fps():0>7.1f}", end="")
@@ -404,19 +404,17 @@ class PygameGUI(Thread):
     def run(self) -> None:
         pygame.init()
         # pygame.RESIZABLE | pygame.SCALED
-        quit = self.quit
-        game_start = self.game_start
         try:
             window = display.set_mode(self.WINDOWSIZE)
-            while not quit.is_set():
+            while not self.quit.is_set():
                 for e in event.get():
                     if e.type == pygame.QUIT:
                         return
-                if game_start.get():
+                if self.game_start.get() is not None:
                     self.main(window)
         finally:
             pygame.quit()
-            quit.set()
+            self.quit.set()
 
 
 if __name__ == "__main__":

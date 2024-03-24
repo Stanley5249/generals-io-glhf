@@ -23,9 +23,9 @@ class GameStartDict(TypedDict):
     usernames: list[str]
     teams: list[int]
     game_type: Literal["ffa", "1v1", "custom"]
-    swamps: list
-    lights: list
-    options: list
+    swamps: list[Any]
+    lights: list[Any]
+    options: dict[str, Any]
 
 
 class GameUpdateDict(TypedDict):

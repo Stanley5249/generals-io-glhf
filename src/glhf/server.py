@@ -38,6 +38,8 @@ def make_2d_grid(
     vs["name"] = [f"{x},{y}" for x, y in coords]
     vs["army"] = 0
     vs["terrain"] = -1
+    # vs["is_city"] = False
+    # vs["is_general"] = False
     return g
 
 
@@ -149,7 +151,14 @@ def move_army(
 
 
 class LocalServer(ServerProtocol):
-    def __init__(self, row: int, col: int) -> None:
+    def __init__(
+        self,
+        row: int,
+        col: int,
+        moves_per_turn: int = 2,
+        turns_per_round: int = 25,
+        turns_per_sec: float = 1.0,
+    ) -> None:
         self.clients: dict[ClientProtocol, str] = {}
         self.row = row
         self.col = col
@@ -162,6 +171,11 @@ class LocalServer(ServerProtocol):
         self.player_ids: list[str] = []
         self.queue_id = ""
         self.move_queues: list[deque[tuple[int, int, bool]]] = []
+
+        # settings
+        self.moves_per_turn = moves_per_turn
+        self.turns_per_round = turns_per_round
+        self.turns_per_sec = turns_per_sec
 
     def random_connected_map(
         self,
@@ -283,17 +297,34 @@ class LocalServer(ServerProtocol):
     # recieve
     # ============================================================
 
-    async def game_update(self) -> None:
-        g = self.graph
-        vs = g.vs
+    def game_update(self, turn, map_diff) -> None:
+        for c in self.clients:
+            c.game_update(
+                {
+                    "scores": [],
+                    "turn": turn,
+                    "stars": [],
+                    "attackIndex": 0,
+                    "generals": self.generals,
+                    "map_diff": map_diff,
+                    "cities_diff": [],
+                }
+            )
 
+    # ============================================================
+    # run
+    # ============================================================
+
+    def internal_update(self):
+        graph = self.graph
+        vs = graph.vs
         turn = self.turn + 1
 
         # move armies
         for i, q in enumerate(self.move_queues):
             while q:
                 start, end, is50 = q.popleft()
-                if move_army(g, i, start, end, is50):
+                if move_army(graph, i, start, end, is50):
                     break
 
         # update generals and cities
@@ -316,26 +347,7 @@ class LocalServer(ServerProtocol):
         self.map_ = map_
         self.turn = turn
 
-        for c in self.clients.keys():
-            c.game_update(
-                {
-                    "scores": [],
-                    "turn": turn,
-                    "stars": [],
-                    "attackIndex": 0,
-                    "generals": self.generals,
-                    "map_diff": map_diff,
-                    "cities_diff": [],
-                }
-            )
-
-    # ============================================================
-    # recieve
-    # ============================================================
-
-    # ============================================================
-    # run
-    # ============================================================
+        return turn, map_diff
 
     async def connect(self, client: ClientProtocol) -> None:
         self.clients[client] = ""
@@ -344,22 +356,26 @@ class LocalServer(ServerProtocol):
         del self.clients[client]
 
     async def run(self) -> None:
+        t_start = time.monotonic()
+        secs_per_move = self.turns_per_sec / self.moves_per_turn
+
         self.random_connected_map(0)
         self.dispersion_generals(2)
 
-        for c in self.clients.keys():
+        for c in self.clients:
             c.game_start({})  # type: ignore
 
-        start = time.monotonic()
-
         for _ in range(51):
-            await self.game_update()
+            turn, map_diff = self.internal_update()
+            t_start += secs_per_move
+            t_end = time.monotonic()
+            await asyncio.sleep(max(0, t_start - t_end))
+            self.game_update(turn, map_diff)
 
-            end = time.monotonic()
-            await asyncio.sleep(max(0, 0.5 - (end - start)))
-            start = end
+            if __debug__:
+                pass
 
-        for c in self.clients.keys():
+        for c in self.clients:
             c.game_over()
 
 
@@ -439,28 +455,3 @@ class SocketioServer:
 
     async def run(self) -> None:
         pass
-
-    # def draw_graph(self):
-    #     """Draws the graph representation of the map.
-
-    #     Returns:
-    #         A tuple containing the figure and axis objects.
-    #     """
-    #     import matplotlib.pyplot as plt
-
-    #     c, r = self.map_[:2]
-    #     g = self.graph
-    #     vs = g.vs
-    #     fig, ax = plt.subplots(
-    #         figsize=(c * 0.5, r * 0.5),
-    #         layout="tight",
-    #     )
-    #     ax.invert_yaxis()
-    #     ig.plot(
-    #         g,
-    #         ax,
-    #         layout=vs["coord"],
-    #         vertex_label=vs["name"],
-    #         vertex_label_size=4,
-    #     )
-    #     return fig, ax

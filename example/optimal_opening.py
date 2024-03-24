@@ -1,4 +1,4 @@
-from asyncio import create_task, run, to_thread
+import asyncio
 from collections import deque
 from itertools import accumulate, chain, pairwise
 from secrets import token_urlsafe
@@ -7,10 +7,10 @@ from typing import Iterable
 import igraph as ig
 from glhf.base import ClientProtocol
 from glhf.bot import Bot
-from glhf.client import SocketioClient
+from glhf.client import BasicClient
 from glhf.gui import PygameGUI
 from glhf.helper import patch
-from glhf.server import make_2d_grid
+from glhf.server import LocalServer, SocketioServer, make_2d_grid
 from ortools.sat.python import cp_model as cp
 
 
@@ -163,9 +163,8 @@ def scheduling_pcvrp(
 
 
 def opening_moves(
-    generals: list[int],
     graph: ig.Graph,
-    player_index: int,
+    general_index: int,
     *,
     n_departs: int = 5,
     d_max: int = 16,
@@ -175,10 +174,8 @@ def opening_moves(
     timeout: float = 5.0,
     verbose: bool = False,
 ) -> list[tuple[int, list[int]]]:
-    if not (0 <= player_index < len(generals)):
-        raise ValueError("player_index must be in [0, len(generals))")
-    g_vs = graph.vs
-    s = g_vs[generals[player_index]]["name"]
+    vs = graph.vs
+    s = vs[general_index]["name"]
     g_vids = graph.neighborhood(s, d_max)
     h = graph.subgraph(g_vids)
     h_vids, layer, parents = h.bfs(s)
@@ -202,6 +199,23 @@ def opening_moves(
     return [(time, [g_vids[v] for v in path]) for time, path in path_list]
 
 
+def make_graph(map_: list[int], cities: list[int], generals: list[int]) -> ig.Graph:
+    col = map_[0]
+    row = map_[1]
+    size = col * row
+    terrain = map_[2 + size :]
+    graph = make_2d_grid(row, col)
+    # vs = graph.vs
+    # vs[cities]["is_city"] = True
+    # vs[generals]["is_general"] = True
+    # vs["army"] = map_[2 : 2 + size]
+    # vs["terrain"] = map_[2 + size :]
+    obstacles = [i for i, t in enumerate(terrain) if t == -2 or t == -4]
+    obstacles += cities
+    graph.delete_edges(_source=obstacles)
+    return graph
+
+
 class OptimalOpening(Bot):
     async def run(self, client: ClientProtocol) -> None:
         queue_id = token_urlsafe(3)
@@ -211,61 +225,62 @@ class OptimalOpening(Bot):
             if not data["isForcing"]:
                 client.set_force_start(True)
 
-        await self.game_start.wait()
+        data = await self.game_start.wait()
+        assert data is not None, "game_start event should not be None"
+        player_index = data["playerIndex"]
 
         map_: list[int] = []
         cities: list[int] = []
-
         paths: list[tuple[int, list[int]]] = []
+        graph = ig.Graph()  # avoid unbound
 
         async for data in self.game_update:
+            turn = data["turn"]
             map_ = patch(map_, data["map_diff"])
             cities = patch(cities, data["cities_diff"])
             generals = data["generals"]
             turn = data["turn"]
-            if turn == 1:
-                col = map_[0]
-                row = map_[1]
-                size = col * row
-                graph = make_2d_grid(row, col)
-                terrain = map_[2 + size :]
-                obstacles = [i for i, t in enumerate(terrain) if t == -2 or t == -4]
-                obstacles += cities
-                graph.delete_edges(_source=obstacles)
 
-                coro = to_thread(opening_moves, generals, graph, 0)
-                task = create_task(coro)
+            if turn == 1:
+                graph = make_graph(map_, cities, generals)
+                task = asyncio.create_task(
+                    asyncio.to_thread(
+                        opening_moves, graph, generals[player_index], verbose=True
+                    )
+                )
                 task.add_done_callback(lambda t: paths.extend(t.result()))
 
             elif turn == 50:
-                await client.surrender()
+                client.surrender()
 
             if paths:
                 s, path = paths[0]
                 t = s + len(path) - 1
                 if s <= turn < t:
                     i = turn - s
-                    await client.attack(path[i], path[i + 1], False)
+                    client.attack(path[i], path[i + 1], False)
                     if turn == t - 1:
                         paths.pop(0)
 
-        await self.game_over.wait()
+        client.leave_game()
 
-        await client.leave_game()
+
+def set_eager_task_factory(is_eager: bool) -> None:
+    loop = asyncio.get_event_loop()
+    loop.set_task_factory(asyncio.eager_task_factory if is_eager else None)  # type: ignore
+
+
+async def main() -> None:
+    set_eager_task_factory(True)
+    USERID = "123"
+    USERNAME = "[BOT] 123"
+    server = LocalServer(18, 16)
+    # server = SocketioServer()
+    bot = OptimalOpening()
+    gui = PygameGUI()
+    client = BasicClient(USERID, USERNAME, bot, gui, server)
+    await client.run()
 
 
 if __name__ == "__main__":
-    USERID = "123"
-    USERNAME = "[BOT] 123"
-
-    bot = OptimalOpening()
-    gui = PygameGUI()
-
-    client = SocketioClient(
-        USERID,
-        USERNAME,
-        bot,
-        gui,
-    )
-
-    run(client.run(), debug=False)
+    asyncio.run(main())
