@@ -3,7 +3,6 @@ from asyncio import Queue as AQueue
 from asyncio import QueueEmpty, Task, create_task
 from functools import partial, update_wrapper, wraps
 from queue import Empty, Queue
-import re
 from threading import Event
 from typing import Any, Callable, Concatenate, Coroutine, Protocol, Self, overload
 

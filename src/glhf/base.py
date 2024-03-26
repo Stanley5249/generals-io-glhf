@@ -71,16 +71,15 @@ class ServerProtocol(Protocol):
     async def connect(
         self,
         client: ClientProtocol,
+        user_id: str,
     ) -> None: ...
 
     @abstractmethod
     async def disconnect(
         self,
         client: ClientProtocol,
+        user_id: str,
     ) -> None: ...
-
-    @abstractmethod
-    async def run(self) -> None: ...
 
 
 class ClientProtocol(Protocol):

@@ -218,8 +218,7 @@ def make_graph(map_: list[int], cities: list[int], generals: list[int]) -> ig.Gr
 
 class OptimalOpening(Bot):
     async def run(self, client: ClientProtocol) -> None:
-        queue_id = token_urlsafe(3)
-        client.join_private(queue_id)
+        client.join_private("" or token_urlsafe(3))
 
         async for data in self.queue_update:
             if not data["isForcing"]:
@@ -274,8 +273,8 @@ async def main() -> None:
     set_eager_task_factory(True)
     USERID = "123"
     USERNAME = "[BOT] 123"
-    server = LocalServer(18, 16)
-    # server = SocketioServer()
+    # server = LocalServer(18, 16)
+    server = SocketioServer()
     bot = OptimalOpening()
     gui = PygameGUI()
     client = BasicClient(USERID, USERNAME, bot, gui, server)

@@ -104,11 +104,11 @@ class BasicClient(ClientProtocol):
 
     async def __aenter__(self) -> None:
         self.gui.__enter__()
-        await self.server.connect(self)
+        await self.server.connect(self, self.userid)
 
     async def __aexit__(self, exc_type, exc_val, exc_tb) -> None:
         self.gui.__exit__(exc_type, exc_val, exc_tb)
-        await self.server.disconnect(self)
+        await self.server.disconnect(self, self.userid)
 
     async def run(self) -> None:
         async with self:

@@ -1,6 +1,7 @@
 import asyncio
 import time
 from collections import deque
+from dataclasses import dataclass, field
 from itertools import combinations as C
 from itertools import product as P
 from random import Random
@@ -8,6 +9,7 @@ from typing import Any
 
 import igraph as ig
 import ortools.sat.python.cp_model as cp
+from bidict import KeyDuplicationError, ValueDuplicationError, bidict
 from socketio import AsyncClient
 
 from glhf.base import ClientProtocol, ServerProtocol
@@ -150,6 +152,38 @@ def move_army(
     return False
 
 
+@dataclass(slots=True)
+class Queue:
+    id: str = ""
+    force_start: bool = False
+
+    def clear(self) -> None:
+        self.id = ""
+        self.force_start = False
+
+
+@dataclass(slots=True)
+class Game:
+    id: str = ""
+    left: bool = False
+    surrendered: bool = False
+    attacks: deque[tuple[int, int, bool]] = field(default_factory=deque)
+
+
+@dataclass(slots=True)
+class User:
+    id: str
+    name: str = "Anonymous"
+
+
+@dataclass(slots=True)
+class Player:
+    client: ClientProtocol
+    user: User
+    queue: Queue = field(default_factory=Queue)
+    game: Game = field(default_factory=Game)
+
+
 class LocalServer(ServerProtocol):
     def __init__(
         self,
@@ -159,18 +193,15 @@ class LocalServer(ServerProtocol):
         turns_per_round: int = 25,
         turns_per_sec: float = 1.0,
     ) -> None:
-        self.clients: dict[ClientProtocol, str] = {}
         self.row = row
         self.col = col
-        self.map_ = []
-        self.graph = make_2d_grid(row, col)
-        self.turn = 0
-        self.generals: list[int] = []
-        self.cities: list[int] = []
-        self.usernames: dict[str, str] = {}
-        self.player_ids: list[str] = []
-        self.queue_id = ""
-        self.move_queues: list[deque[tuple[int, int, bool]]] = []
+
+        self.user_ids: bidict[ClientProtocol, str] = bidict()
+        self.clients: bidict[str, ClientProtocol] = self.user_ids.inverse
+
+        self.users: dict[str, User] = {}
+        self.players: dict[str, Player] = {}
+        self.game_queues: dict[str, list[Player]] = {}
 
         # settings
         self.moves_per_turn = moves_per_turn
@@ -179,57 +210,35 @@ class LocalServer(ServerProtocol):
 
     def random_connected_map(
         self,
+        graph: ig.Graph,
         seed: Any = None,
     ) -> None:
-        g = self.graph
-        es = g.es
-        vs = g.vs
+        es = graph.es
+        vs = graph.vs
         rng = Random(seed)
-        es["weight"] = [rng.random() for _ in range(g.ecount())]
-        mst = g.spanning_tree("weight")
+        es["weight"] = [rng.random() for _ in range(graph.ecount())]
+        mst = graph.spanning_tree("weight")
         leaves = mst.vs.select(_degree_le=1).indices
-        g.delete_edges(_source=leaves)
+        graph.delete_edges(_source=leaves)
         vs[leaves]["terrain"] = -2
 
-    def set_generals(self, generals: list[int]) -> None:
-        """Sets the generals on the map.
-
-        Args:
-            generals: The list of generals.
-
-        Returns:
-            None
-        """
-        graph = self.graph
+    def set_generals(self, graph: ig.Graph, generals: list[int]) -> None:
         vs = graph.vs
         for i, v in enumerate(vs[generals]):
             v["terrain"] = i
-        self.generals = generals
-        self.move_queues = [deque() for _ in generals]
 
     def dispersion_generals(
         self,
         n: int,
+        row: int,
+        col: int,
+        graph: ig.Graph,
         *,
         d_min: int = 9,
         seed: Any = None,
         verbose: bool = False,
-    ) -> None:
-        """Randomly selects generals on the map.
-
-        Args:
-            n: The number of generals to select.
-
-        Keyword Args:
-            d_min: The minimum distance between any two generals.
-            seed: The seed for the random number generator.
-            verbose: A flag indicating whether to print the solver status.
-
-        Returns:
-            None
-        """
-        g = self.graph
-        vs = g.vs
+    ) -> list[int]:
+        vs = graph.vs
 
         # sample vertices
         rng = Random(seed)
@@ -238,10 +247,11 @@ class LocalServer(ServerProtocol):
         selects = rng.sample(indices, k)
 
         # update generals
-        d_max = self.row + self.col - 2
+        d_max = row + col - 2
         coords = vs[selects]["coord"]
         generals = p_dispersion(n, d_min, d_max, selects, coords, verbose)
-        self.set_generals(generals)
+        self.set_generals(graph, generals)
+        return generals
 
     # ============================================================
     # send
@@ -255,83 +265,147 @@ class LocalServer(ServerProtocol):
     async def set_username(
         self, client: ClientProtocol, user_id: str, username: str
     ) -> None:
-        self.usernames[user_id] = username
+        if self.user_ids[client] != user_id:
+            raise
+        self.users[user_id].name = username
 
     @to_task
     async def join_private(
         self, client: ClientProtocol, queue_id: str, user_id: str
     ) -> None:
-        self.queue_id = queue_id
-        self.clients[client] = user_id
-        self.player_ids.append(user_id)
-        asyncio.create_task(self.run())
+        if self.user_ids[client] != user_id:
+            raise
+        game_queue = self.game_queues.setdefault(queue_id, [])
+        player = self.players[user_id]
+        player.queue.id = queue_id
+        game_queue.append(player)
+        self._queue_update(queue_id)
 
     @to_task
     async def set_force_start(
         self, client: ClientProtocol, queue_id: str, do_force: bool
     ) -> None:
-        pass
+        try:
+            user_id = self.user_ids[client]
+        except KeyError:
+            raise
+        players = self.game_queues[queue_id]
+        for player in players:
+            if player.user.id == user_id:
+                player.queue.force_start = do_force
+                break
+        else:
+            raise
+        self._queue_update(queue_id)
 
     @to_task
     async def leave_game(self, client: ClientProtocol) -> None:
-        user_id = self.clients[client]
-        self.player_ids.remove(user_id)
+        try:
+            user_id = self.user_ids[client]
+        except KeyError:
+            raise
+        player = self.players[user_id]
+        if player.game.id:
+            player.game.left = True
+        else:
+            raise
 
     @to_task
     async def surrender(self, client: ClientProtocol) -> None:
-        pass
+        try:
+            user_id = self.user_ids[client]
+        except KeyError:
+            raise
+        player = self.players[user_id]
+        if player.game.id:
+            player.game.surrendered = True
+        else:
+            raise
 
     @to_task
     async def attack(
         self, client: ClientProtocol, start: int, end: int, is50: bool
     ) -> None:
         try:
-            user_id = self.clients[client]
-            i = self.player_ids.index(user_id)
-        except (KeyError, ValueError):
-            pass
-        else:
-            self.move_queues[i].append((start, end, is50))
+            user_id = self.user_ids[client]
+        except KeyError:
+            raise
+        player = self.players[user_id]
+        player.game.attacks.append((start, end, is50))
 
     # ============================================================
     # recieve
     # ============================================================
 
-    def game_update(self, turn, map_diff) -> None:
-        for c in self.clients:
-            c.game_update(
+    def _queue_update(self, queue_id: str) -> None:
+        try:
+            players = self.game_queues[queue_id]
+        except KeyError:
+            raise
+
+        for i, player in enumerate(players):
+            data = {
+                "playerIndices": i,
+                "isForcing": player.queue.force_start,
+                "usernames": [player.user.name for player in players],
+            }
+            player.client.queue_update(data)  # type: ignore
+
+        if sum(user_data.queue.force_start for user_data in players) >= 1:
+            del self.game_queues[queue_id]
+            for player in players:
+                player.queue.clear()
+                player.game.id = queue_id
+            asyncio.create_task(self.run(players))
+
+    def _game_start(self, players: list[Player]) -> None:
+        for i, player in enumerate(players):
+            player.client.game_start({"playerIndex": i})  # type: ignore
+
+    def _game_update(self, players: list[Player], turn, generals, map_diff) -> None:
+        for player in players:
+            player.client.game_update(
                 {
                     "scores": [],
                     "turn": turn,
                     "stars": [],
                     "attackIndex": 0,
-                    "generals": self.generals,
+                    "generals": generals,
                     "map_diff": map_diff,
                     "cities_diff": [],
                 }
             )
 
-    # ============================================================
-    # run
-    # ============================================================
+    def _game_over(self, players: list[Player]) -> None:
+        for player in players:
+            player.client.game_over()
 
-    def internal_update(self):
-        graph = self.graph
+    def _map_update(
+        self,
+        players: list[Player],
+        row: int,
+        col: int,
+        turn: int,
+        map_old: list[int],
+        generals: list[int],
+        cities: list[int],
+        graph: ig.Graph,
+    ) -> tuple[list[int], list[int]]:
         vs = graph.vs
-        turn = self.turn + 1
 
         # move armies
-        for i, q in enumerate(self.move_queues):
-            while q:
-                start, end, is50 = q.popleft()
+        for i, player in enumerate(players):
+            attacks = player.game.attacks
+            while attacks:
+                start, end, is50 = attacks.popleft()
                 if move_army(graph, i, start, end, is50):
                     break
 
         # update generals and cities
         if turn % 2 == 1:
-            for v in vs[self.generals]:
+            for v in vs[generals]:
                 v["army"] += 1
-            for v in vs[self.cities]:
+            for v in vs[cities]:
                 v["army"] += 1
 
         # update lands
@@ -339,44 +413,64 @@ class LocalServer(ServerProtocol):
             for v in vs.select(terrain_ge=0):
                 v["army"] += 1
 
-        map_ = [self.col, self.row]
-        map_ += vs["army"]
-        map_ += vs["terrain"]
+        map_new = [col, row]
+        map_new += vs["army"]
+        map_new += vs["terrain"]
 
-        map_diff = make_diff(map_, self.map_)
-        self.map_ = map_
-        self.turn = turn
+        map_diff = make_diff(map_new, map_old)
 
-        return turn, map_diff
+        return map_new, map_diff
 
-    async def connect(self, client: ClientProtocol) -> None:
-        self.clients[client] = ""
+    # ============================================================
+    # run
+    # ============================================================
 
-    async def disconnect(self, client: ClientProtocol) -> None:
-        del self.clients[client]
+    async def connect(self, client: ClientProtocol, user_id: str) -> None:
+        try:
+            self.user_ids.put(client, user_id)
+        except ValueDuplicationError:
+            raise
+        except KeyDuplicationError:
+            raise
+        if user_id not in self.users:
+            self.users[user_id] = User(user_id)
+        user = self.users[user_id]
+        self.players[user_id] = Player(client, user)
 
-    async def run(self) -> None:
+    async def disconnect(self, client: ClientProtocol, user_id: str) -> None:
+        if self.user_ids[client] != user_id:
+            raise
+        del self.user_ids[client]
+
+    async def run(self, players: list[Player]) -> None:
+        row = self.row
+        col = self.col
+
+        graph = make_2d_grid(row, col)
+        self.random_connected_map(graph, 0)
+
+        map_: list[int] = []
+        generals: list[int] = self.dispersion_generals(2, row, col, graph)
+        cities: list[int] = []
+
         t_start = time.monotonic()
         secs_per_move = self.turns_per_sec / self.moves_per_turn
 
-        self.random_connected_map(0)
-        self.dispersion_generals(2)
+        self._game_start(players)
 
-        for c in self.clients:
-            c.game_start({})  # type: ignore
-
-        for _ in range(51):
-            turn, map_diff = self.internal_update()
+        for turn in range(1, 52):
+            map_, map_diff = self._map_update(
+                players, row, col, turn, map_, generals, cities, graph
+            )
             t_start += secs_per_move
             t_end = time.monotonic()
             await asyncio.sleep(max(0, t_start - t_end))
-            self.game_update(turn, map_diff)
+            self._game_update(players, turn, generals, map_diff)
 
             if __debug__:
                 pass
 
-        for c in self.clients:
-            c.game_over()
+        self._game_over(players)
 
 
 class SocketioServer:
@@ -431,7 +525,7 @@ class SocketioServer:
     # run
     # ============================================================
 
-    async def connect(self, client: ClientProtocol) -> None:
+    async def connect(self, client: ClientProtocol, user_id: str) -> None:
         c = AsyncClient(ssl_verify=False)
         self.sockets[client] = c
         c.event(client.stars)
@@ -447,7 +541,7 @@ class SocketioServer:
         c.event(client.game_over)
         await c.connect(WSURL, transports=["websocket"])
 
-    async def disconnect(self, client: ClientProtocol) -> None:
+    async def disconnect(self, client: ClientProtocol, user_id: str) -> None:
         c = self.sockets[client]
         del self.sockets[client]
         await c.disconnect()
