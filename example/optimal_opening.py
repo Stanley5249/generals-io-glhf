@@ -46,18 +46,22 @@ def link_edges[T](edges: Iterable[tuple[T, T]], *, start: T = 0) -> deque[T]:
 
 
 class SchedulingCallback(cp.CpSolverSolutionCallback):
-    def __init__(self, lands_vars: list[cp.IntVar], time_vars: list[cp.IntVar]) -> None:
+    def __init__(
+        self,
+        n_lands_vars: list[cp.IntVar],
+        n_turns_vars: list[cp.IntVar],
+    ) -> None:
         super().__init__()
-        self.lands_vars = lands_vars
-        self.time_vars = time_vars
-        self.count: int = 0
+        self.n_lands_vars = n_lands_vars
+        self.n_turns_vars = n_turns_vars
+        self.count = 0
 
     def on_solution_callback(self) -> None:
         self.count += 1
         print(
             f"solution {self.count}, obj = {int(self.objective_value)}, time = {self.wall_time:.2f}s",
-            f"lands [{", ".join(f"{self.value(v):>2}" for v in self.lands_vars)}]",
-            f"time  [{", ".join(f"{self.value(v):>2}" for v in self.time_vars)}]",
+            f"lands [{", ".join(f"{self.value(var):>2}" for var in self.n_lands_vars)}]",
+            f"turns [{", ".join(f"{self.value(var):>2}" for var in self.n_turns_vars)}]",
             sep="\n",
             end="\n\n",
         )
@@ -66,116 +70,134 @@ class SchedulingCallback(cp.CpSolverSolutionCallback):
 def scheduling_pcvrp(
     n_vertices: int,
     edges: list[tuple[int, int]],
-    n_departs: int,
-    moves_per_turn: int,
-    turns_per_round: int,
-    turns_per_sec: float,
-    timeout: float,
-    verbose: bool,
+    n_paths: int = 5,
+    mpt: int = 2,
+    tpr: int = 25,
+    tps: float = 1.0,
+    timeout: float = 3.0,
+    verbose: bool = False,
 ) -> list[tuple[int, deque[int]]]:
     t_start = time.monotonic()
+    solver = cp.CpSolver()
+    model = cp.CpModel()
 
-    m = cp.CpModel()
-    cp_sum = cp.LinearExpr.sum
+    n_moves = tpr * mpt  # 50
+    max_tpr = n_moves // (mpt + 1)  # 16
+    min_start_lands = int(timeout * mpt / tps)  # 6
 
-    moves = turns_per_round * moves_per_turn  # 50
-    ub = moves // (moves_per_turn + 1)  # 16
+    n_lands_vars = [
+        model.new_int_var(0, max_tpr, f"#{i} lands") for i in range(n_paths)
+    ]
+    n_turns_vars = [
+        model.new_int_var(0, max_tpr, f"#{i} turns") for i in range(n_paths)
+    ]
+    sum_lands_var = cp.LinearExpr.sum(n_lands_vars)
+    sum_turns_var = cp.LinearExpr.sum(n_turns_vars)
+    start_turns_var = n_lands_vars[0] * mpt
 
-    lands_vars = [m.new_int_var(0, ub, f"#{i} lands") for i in range(n_departs)]
-    time_vars = [m.new_int_var(0, ub, f"#{i} time") for i in range(n_departs)]
+    # n_lands[0] * 2 + sum(n_turns) == n_moves
+    model.add(start_turns_var + sum_turns_var == n_moves)
 
-    m.add(lands_vars[0] * moves_per_turn + cp_sum(time_vars) == moves)
-    sum_lands_var = cp_sum(lands_vars)
-    m.add_linear_constraint(sum_lands_var, ub, turns_per_round - 1)  # 16 ~ 24
+    # 16 <= sum(n_lands) <= 24
+    model.add_linear_constraint(sum_lands_var, max_tpr, tpr - 1)
 
-    for i in range(n_departs):
-        m.add(lands_vars[i] <= time_vars[i])
+    # (n_lands[i] <= n_turns[i]) for i in range(5)
+    for i in range(n_paths):
+        model.add(n_lands_vars[i] <= n_turns_vars[i])
 
-    # lands[0] >= timeout * 2 / 1
-    m.add(lands_vars[0] >= int(timeout * moves_per_turn / turns_per_sec))
+    # n_lands[0] >= timeout * 2 / 1
+    model.add(n_lands_vars[0] >= min_start_lands)
 
-    # lands[1] * 2 == time[0]
-    m.add(lands_vars[1] * moves_per_turn == time_vars[0])
+    # n_lands[1] * 2 == n_turns[0]
+    model.add(n_lands_vars[1] * mpt == n_turns_vars[0])
 
-    # (lands[i] + lands[i + 1]) * 2 <= time[i - 1] + time[i]
-    for i in range(1, n_departs - 1):
-        m.add(
-            (lands_vars[i] + lands_vars[i + 1]) * 2 <= time_vars[i - 1] + time_vars[i]  # type: ignore
-        )
+    # n_lands[i] + n_lands[i + 1] <= (n_turns[i - 1] + n_turns[i]) / 2
+    for i in range(1, n_paths - 1):
+        n_lands_mul_mpt_var = (n_lands_vars[i] + n_lands_vars[i + 1]) * mpt
+        n_turns_var = n_turns_vars[i - 1] + n_turns_vars[i]
+        model.add(n_lands_mul_mpt_var <= n_turns_var)  # type: ignore
 
     # hints
-    for var, val in zip(lands_vars, (12, 6, 4, 2, 0)):
-        m.add_hint(var, val)
-
-    for var, val in zip(time_vars, (12, 8, 4, 2, 0)):
-        m.add_hint(var, val)
+    # n_lands = [12, 6, 4, 2, 0]
+    # n_turns = [12, 8, 4, 2, 0]
+    for var, n_lands in zip(n_lands_vars, (12, 6, 4, 2, 0)):
+        model.add_hint(var, n_lands)
+    for var, start_turns in zip(n_turns_vars, (12, 8, 4, 2, 0)):
+        model.add_hint(var, start_turns)
 
     # heuristic
-    for i, j in pairwise(range(n_departs)):
-        m.add(lands_vars[i] >= lands_vars[j])
-        m.add(time_vars[i] >= time_vars[j])
+    # n_lands[i] >= n_lands[i+1] for i in range(5-1)
+    # n_turns[i] >= n_turns[i+1] for i in range(5-1)
+    for i, j in pairwise(range(n_paths)):
+        model.add(n_lands_vars[i] >= n_lands_vars[j])
+        model.add(n_turns_vars[i] >= n_turns_vars[j])
 
-    visited_vars = [0] * (n_vertices - 1)
-    edge_vars = []
+    # objective
+    model.maximize(sum_lands_var)
 
-    for i in range(n_departs):
-        v_vars = [m.new_bool_var(f"#{i} v{v}") for v in range(1, n_vertices)]
-        e_vars = [m.new_bool_var(f"#{i} e{e}") for e in edges]
-        t_vars = [m.new_bool_var(f"#{i} t{t}") for t in range(n_vertices)]
-        last_visited_vars = visited_vars
-        visited_vars = [m.new_bool_var(f"#{i} ^{v}") for v in range(1, n_vertices)]
+    edge_vars_list = []
+    new_visited_vars = [0] * (n_vertices - 1)
 
-        m.add(cp_sum(v_vars) <= time_vars[i])
-        m.add(cp_sum(visited_vars) == cp_sum(last_visited_vars) + lands_vars[i])
-        m.add_exactly_one(t_vars)
+    for i in range(n_paths):
+        vertex_vars = [
+            model.new_bool_var(f"#{i} vertex-{v}") for v in range(1, n_vertices)
+        ]
+        edge_vars = [model.new_bool_var(f"#{i} edge-{u}-{v}") for u, v in edges]
+        sink_vars = [model.new_bool_var(f"#{i} sink-{t}") for t in range(n_vertices)]
 
-        for a, b, c in zip(v_vars, last_visited_vars, visited_vars):
-            m.add_bool_or(a, b, c.Not())
-            m.add_implication(a, c)
-            m.add_implication(b, c)
+        old_visited_vars = new_visited_vars
+        new_visited_vars = [
+            model.new_bool_var(f"#{i} l{v}") for v in range(1, n_vertices)
+        ]
+
+        sum_vertex_var = cp.LinearExpr.sum(vertex_vars)
+        sum_old_visited_var = cp.LinearExpr.sum(old_visited_vars)
+        sum_new_visited_var = cp.LinearExpr.sum(new_visited_vars)
+
+        model.add(sum_vertex_var <= n_turns_vars[i])
+        model.add(sum_new_visited_var == sum_old_visited_var + n_lands_vars[i])
+        model.add_exactly_one(sink_vars)
+
+        for a, b, c in zip(vertex_vars, old_visited_vars, new_visited_vars):
+            model.add_bool_or(a, b, c.negated())
+            model.add_implication(a, c)
+            model.add_implication(b, c)
 
         arcs = tuple(
             chain(
-                ((v, v, var.negated()) for v, var in enumerate(v_vars, 1)),
-                ((u, v, var) for (u, v), var in zip(edges, e_vars)),
-                ((t, 0, var) for t, var in enumerate(t_vars)),
+                ((v, v, var.negated()) for v, var in enumerate(vertex_vars, 1)),
+                ((u, v, var) for (u, v), var in zip(edges, edge_vars)),
+                ((t, 0, var) for t, var in enumerate(sink_vars)),
             )
         )
-        m.add_circuit(arcs)
+        model.add_circuit(arcs)
 
-        edge_vars.append(e_vars)
+        edge_vars_list.append(edge_vars)
 
-    m.maximize(sum_lands_var)
-
-    solver = cp.CpSolver()
-
-    callback = SchedulingCallback(lands_vars, time_vars) if verbose else None
-
+    # solve
+    callback = SchedulingCallback(n_lands_vars, n_turns_vars) if verbose else None
     t_end = time.monotonic()
     solver.parameters.max_time_in_seconds = timeout - (t_end - t_start)
+    status = solver.solve(model, callback)
 
-    status = solver.solve(m, callback)
     status_name = solver.status_name()
+    if verbose:
+        print(status_name)
 
     if status in (cp.OPTIMAL, cp.FEASIBLE):
-        if verbose:
-            print(status_name)
-
-        ts = accumulate(
-            (solver.value(time_var) for time_var in time_vars),
-            initial=solver.value(lands_vars[0] * 2),
+        start_turns = accumulate(
+            (solver.value(var) for var in n_turns_vars),
+            initial=solver.value(start_turns_var),
         )
         paths = (
-            link_edges(e for e, var in zip(edges, e_vars) if solver.boolean_value(var))
-            for e_vars in edge_vars
+            link_edges(e for e, var in zip(edges, vars) if solver.boolean_value(var))
+            for vars in edge_vars_list
         )
-
-        return [(t, path) for t, path in zip(ts, paths)]
-
-    if verbose:
-        print(status_name, m.validate(), sep="\n")
-
-    raise ValueError(status_name)
+        return list(zip(start_turns, paths))
+    else:
+        if status == cp.MODEL_INVALID:
+            print(model.validate())
+        raise ValueError(status_name)
 
 
 def opening_moves(
