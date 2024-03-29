@@ -59,12 +59,12 @@ class SchedulingCallback(cp.CpSolverSolutionCallback):
 def scheduling_pcvrp(
     n_vertices: int,
     edges: list[tuple[int, int]],
-    n_paths: int = 5,
-    mpt: int = 2,
-    tpr: int = 25,
-    tps: float = 1.0,
-    timeout: float = 3.0,
-    verbose: bool = False,
+    n_paths: int,
+    mpt: int,
+    tpr: int,
+    tps: float,
+    timeout: float,
+    verbose: bool,
 ) -> list[tuple[int, list[int]]]:
     t_start = time.monotonic()
     solver = cp.CpSolver()
@@ -115,8 +115,8 @@ def scheduling_pcvrp(
         model.add_hint(var, start_turns)
 
     # heuristic
-    # n_lands[i] >= n_lands[i+1] for i in range(5-1)
-    # n_turns[i] >= n_turns[i+1] for i in range(5-1)
+    # n_lands[i] >= n_lands[i+1] for i in range(5 - 1)
+    # n_turns[i] >= n_turns[i+1] for i in range(5 - 1)
     for i, j in pairwise(range(n_paths)):
         model.add(n_lands_vars[i] >= n_lands_vars[j])
         model.add(n_turns_vars[i] >= n_turns_vars[j])
@@ -136,7 +136,7 @@ def scheduling_pcvrp(
 
         old_visited_vars = new_visited_vars
         new_visited_vars = [
-            model.new_bool_var(f"#{i} l{v}") for v in range(1, n_vertices)
+            model.new_bool_var(f"#{i} visited-{v}") for v in range(1, n_vertices)
         ]
 
         sum_vertex_var = cp.LinearExpr.sum(vertex_vars)
@@ -193,37 +193,39 @@ def opening_moves(
     graph: ig.Graph,
     general_index: int,
     *,
-    n_departs: int = 5,
+    n_paths: int = 5,
     d_max: int = 16,
-    moves_per_turn: int = 2,
-    turns_per_round: int = 25,
-    turns_per_sec: float = 1.0,
-    timeout: float = 5.0,
+    mpt: int = 2,
+    tpr: int = 25,
+    tps: float = 1.0,
+    timeout: float = 3.0,
     verbose: bool = False,
 ) -> list[tuple[int, list[int]]]:
-    vs = graph.vs
-    s = vs[general_index]["name"]
-    g_vids = graph.neighborhood(s, d_max)
+    g_vs = graph.vs
+    s_name = g_vs[general_index]["name"]
+    g_vids = graph.neighborhood(s_name, d_max)
+    
     h = graph.subgraph(g_vids)
-    h_vids, layer, parents = h.bfs(s)
+    h_vids, layer, parents = h.bfs(s_name)
     n = len(h_vids)
-    p = [0] * n
+
+    inv = [0] * n
     for i, v in enumerate(h_vids):
-        p[v] = i
-    h = h.permute_vertices(p)
+        inv[v] = i
+
+    h = h.permute_vertices(inv)
     h_edges = h.get_edgelist()
-    path_list = scheduling_pcvrp(
+    h_paths = scheduling_pcvrp(
         n,
         h_edges,
-        n_departs,
-        moves_per_turn,
-        turns_per_round,
-        turns_per_sec,
+        n_paths,
+        mpt,
+        tpr,
+        tps,
         timeout,
         verbose,
     )
-
-    return [(time, [g_vids[v] for v in path]) for time, path in path_list]
+    return [(turn, [g_vids[v] for v in path]) for turn, path in h_paths]
 
 
 def make_graph(map_: list[int], cities: list[int], generals: list[int]) -> ig.Graph:
