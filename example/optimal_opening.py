@@ -15,34 +15,23 @@ from glhf.server import LocalServer, make_2d_grid
 from ortools.sat.python import cp_model as cp
 
 
-def link_edges[T](edges: Iterable[tuple[T, T]], *, start: T = 0) -> deque[T]:
-    es = deque(edges)
-    path = deque()
-    if not es:
-        return path
-    s, t = es.popleft()
-    path += s, t
-    while es:
-        u, v = es.popleft()
-        if t == u:
-            t = v
-            path.append(t)
-        elif t == v:
-            t = u
-            path.append(t)
-        elif s == u:
-            s = v
-            path.appendleft(s)
-        elif s == v:
-            s = u
-            path.appendleft(s)
+def link_edges(edges: Iterable[tuple[int, int]], *, start: int = 0) -> list[int]:
+    # n = len(edges), time = O(n ^ 2)
+    q = deque(edges)
+    path = [start]
+    while q:
+        u, v = q.popleft()
+        if path[-1] == u:
+            path.append(v)
+        elif path[-1] == v:
+            path.append(u)
         else:
-            es.append((u, v))
-    if s != start:
-        if t != start:
-            raise ValueError("path does not start from the specified start vertex")
+            q.append((v, u))
+    if path[-1] == start:
         path.reverse()
-    return path
+    if path[0] == start:
+        return path
+    raise ValueError("path does not start from the specified start vertex")
 
 
 class SchedulingCallback(cp.CpSolverSolutionCallback):
@@ -76,7 +65,7 @@ def scheduling_pcvrp(
     tps: float = 1.0,
     timeout: float = 3.0,
     verbose: bool = False,
-) -> list[tuple[int, deque[int]]]:
+) -> list[tuple[int, list[int]]]:
     t_start = time.monotonic()
     solver = cp.CpSolver()
     model = cp.CpModel()
