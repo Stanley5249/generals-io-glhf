@@ -1,9 +1,10 @@
+import argparse
 import asyncio
 import time
 from collections import deque
 from itertools import accumulate, chain, pairwise
 from secrets import token_urlsafe
-from typing import Iterable
+from typing import Iterable, Sequence
 
 import igraph as ig
 from glhf.base import ClientProtocol
@@ -11,12 +12,12 @@ from glhf.bot import Bot
 from glhf.client import BasicClient
 from glhf.gui import PygameGUI
 from glhf.helper import patch
-from glhf.server import LocalServer, make_2d_grid
+from glhf.server import LocalServer, SocketioServer, make_2d_grid
 from ortools.sat.python import cp_model as cp
 
 
 def link_edges(edges: Iterable[tuple[int, int]], *, start: int = 0) -> list[int]:
-    # n = len(edges), time = O(n ^ 2)
+    # time = O(len(edges) ^ 2)
     q = deque(edges)
     path = [start]
     while q:
@@ -37,8 +38,8 @@ def link_edges(edges: Iterable[tuple[int, int]], *, start: int = 0) -> list[int]
 class SchedulingCallback(cp.CpSolverSolutionCallback):
     def __init__(
         self,
-        n_lands_vars: list[cp.IntVar],
-        n_turns_vars: list[cp.IntVar],
+        n_lands_vars: Sequence[cp.IntVar],
+        n_turns_vars: Sequence[cp.IntVar],
     ) -> None:
         super().__init__()
         self.n_lands_vars = n_lands_vars
@@ -58,12 +59,15 @@ class SchedulingCallback(cp.CpSolverSolutionCallback):
 
 def scheduling_pcvrp(
     n_vertices: int,
-    edges: list[tuple[int, int]],
+    edges: Sequence[tuple[int, int]],
     n_paths: int,
+    n_lands_hints: Sequence[int] | None,
+    n_turns_hints: Sequence[int] | None,
     mpt: int,
     tpr: int,
     tps: float,
     timeout: float,
+    heuristics: bool,
     verbose: bool,
 ) -> list[tuple[int, list[int]]]:
     t_start = time.monotonic()
@@ -106,20 +110,26 @@ def scheduling_pcvrp(
         n_turns_var = n_turns_vars[i - 1] + n_turns_vars[i]
         model.add(n_lands_mul_mpt_var <= n_turns_var)  # type: ignore
 
-    # hints
-    # n_lands = [12, 6, 4, 2, 0]
-    # n_turns = [12, 8, 4, 2, 0]
-    for var, n_lands in zip(n_lands_vars, (12, 6, 4, 2, 0)):
-        model.add_hint(var, n_lands)
-    for var, start_turns in zip(n_turns_vars, (12, 8, 4, 2, 0)):
-        model.add_hint(var, start_turns)
+    # n_lands_hints = [12, 6, 4, 2, 0]
+    if n_lands_hints is not None:
+        assert len(n_lands_hints) == n_paths, "invalid length of `n_lands_hints`"
+        for var, n_lands in zip(n_lands_vars, n_lands_hints):
+            model.add_hint(var, n_lands)
+
+    # n_turns_hints = [12, 8, 4, 2, 0]
+    if n_turns_hints is not None:
+        assert len(n_turns_hints) == n_paths, "invalid length of `n_turns_hints`"
+
+        for var, n_turns in zip(n_turns_vars, n_turns_hints):
+            model.add_hint(var, n_turns)
 
     # heuristic
     # n_lands[i] >= n_lands[i+1] for i in range(5 - 1)
     # n_turns[i] >= n_turns[i+1] for i in range(5 - 1)
-    for i, j in pairwise(range(n_paths)):
-        model.add(n_lands_vars[i] >= n_lands_vars[j])
-        model.add(n_turns_vars[i] >= n_turns_vars[j])
+    if heuristics:
+        for i, j in pairwise(range(n_paths)):
+            model.add(n_lands_vars[i] >= n_lands_vars[j])
+            model.add(n_turns_vars[i] >= n_turns_vars[j])
 
     # objective
     model.maximize(sum_lands_var)
@@ -199,12 +209,13 @@ def opening_moves(
     tpr: int = 25,
     tps: float = 1.0,
     timeout: float = 3.0,
+    heuristics: bool = True,
     verbose: bool = False,
 ) -> list[tuple[int, list[int]]]:
     g_vs = graph.vs
     s_name = g_vs[general_index]["name"]
     g_vids = graph.neighborhood(s_name, d_max)
-    
+
     h = graph.subgraph(g_vids)
     h_vids, layer, parents = h.bfs(s_name)
     n = len(h_vids)
@@ -215,14 +226,21 @@ def opening_moves(
 
     h = h.permute_vertices(inv)
     h_edges = h.get_edgelist()
+
+    n_lands_hints = 12, 6, 4, 2, 0
+    n_turns_hints = 12, 8, 4, 2, 0
+
     h_paths = scheduling_pcvrp(
         n,
         h_edges,
         n_paths,
+        n_lands_hints,
+        n_turns_hints,
         mpt,
         tpr,
         tps,
         timeout,
+        heuristics,
         verbose,
     )
     return [(turn, [g_vids[v] for v in path]) for turn, path in h_paths]
@@ -275,7 +293,6 @@ class OptimalOpening(Bot):
                         opening_moves,
                         graph,
                         generals[player_index],
-                        timeout=3.0,
                         verbose=True,
                     )
                 )
@@ -305,17 +322,36 @@ def set_eager_task_factory(is_eager: bool) -> None:
     loop.set_task_factory(asyncio.eager_task_factory if is_eager else None)  # type: ignore
 
 
-async def main() -> None:
+async def start(use_local: bool) -> None:
     set_eager_task_factory(True)
     USERID = "h4K1gOyHNnkGngym8fUuYA"
     USERNAME = "PsittaTestBot"
-    server = LocalServer(18, 16)
-    # server = SocketioServer()
+    server = LocalServer(18, 16) if use_local else SocketioServer()
     bot = OptimalOpening()
     gui = PygameGUI()
     client = BasicClient(USERID, USERNAME, bot, gui, server)
     await client.run()
 
 
+def main():
+    parser = argparse.ArgumentParser()
+    server_options = parser.add_argument_group("server options")
+    server_exclusive = server_options.add_mutually_exclusive_group()
+    server_exclusive.add_argument(
+        "--local",
+        action="store_true",
+        help="Run the bot locally",
+        dest="use_local",
+    )
+    server_exclusive.add_argument(
+        "--remote",
+        action="store_false",
+        help="Run the bot remotely",
+        dest="use_local",
+    )
+    args = parser.parse_args()
+    asyncio.run(start(args.use_local))
+
+
 if __name__ == "__main__":
-    asyncio.run(main())
+    main()

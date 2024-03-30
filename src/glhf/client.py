@@ -1,6 +1,5 @@
 import asyncio
 from typing import Any
-from uuid import uuid4
 
 from socketio import AsyncClient
 
@@ -27,7 +26,6 @@ class BasicClient(ClientProtocol):
         self.server = server
         self.bot = bot
         self.gui = gui
-        self.uuid = uuid4()
 
     # ============================================================
     # recieve
@@ -100,7 +98,7 @@ class BasicClient(ClientProtocol):
     # ============================================================
 
     def __hash__(self) -> int:
-        return hash(self.uuid)
+        return hash(self.userid)
 
     async def __aenter__(self) -> None:
         self.gui.__enter__()

@@ -204,9 +204,9 @@ class LocalServer(ServerProtocol):
         self.game_queues: dict[str, list[Player]] = {}
 
         # settings
-        self.moves_per_turn = moves_per_turn
-        self.turns_per_round = turns_per_round
-        self.turns_per_sec = turns_per_sec
+        self.mpt = moves_per_turn
+        self.tpr = turns_per_round
+        self.tps = turns_per_sec
 
     def random_connected_map(
         self,
@@ -454,7 +454,7 @@ class LocalServer(ServerProtocol):
         cities: list[int] = []
 
         t_start = time.monotonic()
-        secs_per_move = self.turns_per_sec / self.moves_per_turn
+        secs_per_move = self.tps / self.mpt
 
         self._game_start(players)
 
