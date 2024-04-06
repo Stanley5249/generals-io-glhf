@@ -1,4 +1,3 @@
-import argparse
 import asyncio
 import time
 from collections import deque
@@ -9,10 +8,9 @@ from typing import Iterable, Sequence
 import igraph as ig
 from glhf.base import ClientProtocol
 from glhf.bot import Bot
-from glhf.client import BasicClient
-from glhf.gui import PygameGUI
+from glhf.cli import main
 from glhf.helper import patch
-from glhf.server import LocalServer, SocketioServer, make_2d_grid
+from glhf.server import make_2d_grid
 from ortools.sat.python import cp_model as cp
 
 
@@ -315,42 +313,6 @@ class OptimalOpening(Bot):
                         paths.pop(0)
 
         client.leave_game()
-
-
-def set_eager_task_factory(is_eager: bool) -> None:
-    loop = asyncio.get_event_loop()
-    loop.set_task_factory(asyncio.eager_task_factory if is_eager else None)  # type: ignore
-
-
-async def start(use_local: bool) -> None:
-    set_eager_task_factory(True)
-    USERID = "h4K1gOyHNnkGngym8fUuYA"
-    USERNAME = "PsittaTestBot"
-    server = LocalServer(18, 16) if use_local else SocketioServer()
-    bot = OptimalOpening()
-    gui = PygameGUI()
-    client = BasicClient(USERID, USERNAME, bot, gui, server)
-    await client.run()
-
-
-def main():
-    parser = argparse.ArgumentParser()
-    server_options = parser.add_argument_group("server options")
-    server_exclusive = server_options.add_mutually_exclusive_group()
-    server_exclusive.add_argument(
-        "--local",
-        action="store_true",
-        help="Run the bot locally",
-        dest="use_local",
-    )
-    server_exclusive.add_argument(
-        "--remote",
-        action="store_false",
-        help="Run the bot remotely",
-        dest="use_local",
-    )
-    args = parser.parse_args()
-    asyncio.run(start(args.use_local))
 
 
 if __name__ == "__main__":
