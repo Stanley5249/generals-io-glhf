@@ -22,9 +22,9 @@ from pygame import (
     transform,
 )
 
-from glhf.helper import patch
-from glhf.typing_ import GameStartDict, GameUpdateDict
-from glhf.utils import signalize, streamify
+from glhf.typing import GameStartDict, GameUpdateDict
+from glhf.utils.map import patch
+from glhf.utils.method import signalize, streamify
 
 __all__ = ("PygameGUI",)
 

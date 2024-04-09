@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import asyncio
 import time
 from collections import deque
@@ -10,14 +12,11 @@ from typing import Any
 import igraph as ig
 import ortools.sat.python.cp_model as cp
 from bidict import KeyDuplicationError, ValueDuplicationError, bidict
-from socketio import AsyncClient
 
-from glhf.base import ClientProtocol, ServerProtocol
-from glhf.helper import make_diff
-from glhf.utils import to_task
-
-WSURL = "wss://ws.generals.io"
-BOTKEY = "sd09fjd203i0ejwi_changeme"
+from glhf.base import Agent, ClientProtocol, ServerProtocol
+from glhf.typing import GameStartDict, GameUpdateDict, QueueUpdateDict
+from glhf.utils.map import make_diff
+from glhf.utils.method import to_task
 
 
 def make_2d_grid(
@@ -178,10 +177,90 @@ class User:
 
 @dataclass(slots=True)
 class Player:
-    client: ClientProtocol
+    agent: Agent
     user: User
     queue: Queue = field(default_factory=Queue)
     game: Game = field(default_factory=Game)
+
+
+class LocalClient(ClientProtocol):
+    def __init__(self, agent: Agent, server: LocalServer) -> None:
+        self._agent = agent
+        self._server = server
+        self._queue_id = ""
+
+    # ============================================================
+    # recieve
+    # ============================================================
+
+    def stars(self, data: dict[str, float]) -> None:
+        self._agent.stars(data)
+
+    def rank(self, data: dict[str, int]) -> None:
+        self._agent.rank(data)
+
+    def chat_message(self, chat_room: str, data: dict[str, Any]) -> None:
+        self._agent.chat_message(chat_room, data)
+
+    def notify(self, data: Any) -> None:
+        self._agent.notify(data)
+
+    def queue_update(self, data: QueueUpdateDict) -> None:
+        self._agent.queue_update(data)
+
+    def pre_game_start(self) -> None:
+        self._agent.pre_game_start()
+
+    def game_start(self, data: GameStartDict) -> None:
+        self._agent.game_start(data)
+
+    def game_update(self, data: GameUpdateDict) -> None:
+        self._agent.game_update(data)
+
+    def game_won(self) -> None:
+        self._agent.game_won()
+
+    def game_lost(self) -> None:
+        self._agent.game_lost()
+
+    def game_over(self) -> None:
+        self._agent.game_over()
+
+    # ============================================================
+    # send
+    # ============================================================
+
+    @to_task
+    async def set_username(self) -> None:
+        await self._server.set_username(self._agent)
+
+    @to_task
+    async def stars_and_rank(self) -> None:
+        await self._server.stars_and_rank(self._agent)
+
+    @to_task
+    async def join_private(self, queue_id: str) -> None:
+        self._queue_id = queue_id
+        await self._server.join_private(self._agent, self._queue_id)
+        print(f"https://generals.io/games/{queue_id}")
+
+    @to_task
+    async def set_force_start(self, do_force: bool) -> None:
+        if not self._queue_id:
+            raise RuntimeError("queue_id not set")
+        await self._server.set_force_start(self._agent, self._queue_id, do_force)
+
+    @to_task
+    async def leave_game(self) -> None:
+        await self._server.leave_game(self._agent)
+
+    @to_task
+    async def surrender(self) -> None:
+        await self._server.surrender(self._agent)
+
+    @to_task
+    async def attack(self, start: int, end: int, is50: bool) -> None:
+        await self._server.attack(self._agent, start, end, is50)
 
 
 class LocalServer(ServerProtocol):
@@ -196,8 +275,8 @@ class LocalServer(ServerProtocol):
         self.row = row
         self.col = col
 
-        self.user_ids: bidict[ClientProtocol, str] = bidict()
-        self.clients: bidict[str, ClientProtocol] = self.user_ids.inverse
+        self.userids: bidict[Agent, str] = bidict()
+        self.agents: bidict[str, Agent] = self.userids.inverse
 
         self.users: dict[str, User] = {}
         self.players: dict[str, Player] = {}
@@ -258,40 +337,36 @@ class LocalServer(ServerProtocol):
     # ============================================================
 
     @to_task
-    async def stars_and_rank(self, client: ClientProtocol, user_id: str) -> None:
+    async def stars_and_rank(self, agent: Agent) -> None:
         pass
 
     @to_task
-    async def set_username(
-        self, client: ClientProtocol, user_id: str, username: str
-    ) -> None:
-        if self.user_ids[client] != user_id:
-            raise
-        self.users[user_id].name = username
+    async def set_username(self, agent: Agent) -> None:
+        if self.userids[agent] != agent.id:
+            raise ValueError("userid mismatch")
+        self.users[agent.id].name = agent.name
 
     @to_task
-    async def join_private(
-        self, client: ClientProtocol, queue_id: str, user_id: str
-    ) -> None:
-        if self.user_ids[client] != user_id:
-            raise
+    async def join_private(self, agent: Agent, queue_id: str) -> None:
+        if self.userids[agent] != agent.id:
+            raise ValueError("userid mismatch")
         game_queue = self.game_queues.setdefault(queue_id, [])
-        player = self.players[user_id]
+        player = self.players[agent.id]
         player.queue.id = queue_id
         game_queue.append(player)
         self._queue_update(queue_id)
 
     @to_task
     async def set_force_start(
-        self, client: ClientProtocol, queue_id: str, do_force: bool
+        self, agent: Agent, queue_id: str, do_force: bool
     ) -> None:
         try:
-            user_id = self.user_ids[client]
+            userid = self.userids[agent]
         except KeyError:
             raise
         players = self.game_queues[queue_id]
         for player in players:
-            if player.user.id == user_id:
+            if player.user.id == userid:
                 player.queue.force_start = do_force
                 break
         else:
@@ -299,38 +374,36 @@ class LocalServer(ServerProtocol):
         self._queue_update(queue_id)
 
     @to_task
-    async def leave_game(self, client: ClientProtocol) -> None:
+    async def leave_game(self, agent: Agent) -> None:
         try:
-            user_id = self.user_ids[client]
+            userid = self.userids[agent]
         except KeyError:
             raise
-        player = self.players[user_id]
+        player = self.players[userid]
         if player.game.id:
             player.game.left = True
         else:
             raise
 
     @to_task
-    async def surrender(self, client: ClientProtocol) -> None:
+    async def surrender(self, agent: Agent) -> None:
         try:
-            user_id = self.user_ids[client]
+            userid = self.userids[agent]
         except KeyError:
             raise
-        player = self.players[user_id]
+        player = self.players[userid]
         if player.game.id:
             player.game.surrendered = True
         else:
             raise
 
     @to_task
-    async def attack(
-        self, client: ClientProtocol, start: int, end: int, is50: bool
-    ) -> None:
+    async def attack(self, agent: Agent, start: int, end: int, is50: bool) -> None:
         try:
-            user_id = self.user_ids[client]
+            userid = self.userids[agent]
         except KeyError:
             raise
-        player = self.players[user_id]
+        player = self.players[userid]
         player.game.attacks.append((start, end, is50))
 
     # ============================================================
@@ -349,7 +422,7 @@ class LocalServer(ServerProtocol):
                 "isForcing": player.queue.force_start,
                 "usernames": [player.user.name for player in players],
             }
-            player.client.queue_update(data)  # type: ignore
+            player.agent.queue_update(data)  # type: ignore
 
         if sum(user_data.queue.force_start for user_data in players) >= 1:
             del self.game_queues[queue_id]
@@ -360,11 +433,11 @@ class LocalServer(ServerProtocol):
 
     def _game_start(self, players: list[Player]) -> None:
         for i, player in enumerate(players):
-            player.client.game_start({"playerIndex": i})  # type: ignore
+            player.agent.game_start({"playerIndex": i})  # type: ignore
 
     def _game_update(self, players: list[Player], turn, generals, map_diff) -> None:
         for player in players:
-            player.client.game_update(
+            player.agent.game_update(
                 {
                     "scores": [],
                     "turn": turn,
@@ -378,7 +451,7 @@ class LocalServer(ServerProtocol):
 
     def _game_over(self, players: list[Player]) -> None:
         for player in players:
-            player.client.game_over()
+            player.agent.game_over()
 
     def _map_update(
         self,
@@ -425,22 +498,24 @@ class LocalServer(ServerProtocol):
     # run
     # ============================================================
 
-    async def connect(self, client: ClientProtocol, user_id: str) -> None:
+    async def connect(self, agent: Agent) -> LocalClient:
         try:
-            self.user_ids.put(client, user_id)
+            self.userids.put(agent, agent.id)
         except ValueDuplicationError:
-            raise
+            raise RuntimeError(f"{agent.id} is already connected")
         except KeyDuplicationError:
-            raise
-        if user_id not in self.users:
-            self.users[user_id] = User(user_id)
-        user = self.users[user_id]
-        self.players[user_id] = Player(client, user)
+            raise RuntimeError("Agent cannot be connected twice")
+        client = LocalClient(agent, self)
+        if agent.id not in self.users:
+            self.users[agent.id] = User(agent.id)
+        user = self.users[agent.id]
+        self.players[agent.id] = Player(agent, user)
+        return client
 
-    async def disconnect(self, client: ClientProtocol, user_id: str) -> None:
-        if self.user_ids[client] != user_id:
-            raise
-        del self.user_ids[client]
+    async def disconnect(self, agent: Agent) -> None:
+        if self.userids[agent] != agent.id:
+            raise ValueError("userid mismatch")
+        del self.userids[agent]
 
     async def run(self, players: list[Player]) -> None:
         row = self.row
@@ -471,81 +546,3 @@ class LocalServer(ServerProtocol):
                 pass
 
         self._game_over(players)
-
-
-class SocketioServer:
-    def __init__(self) -> None:
-        self.sockets: dict[ClientProtocol, AsyncClient] = {}
-
-    # ============================================================
-    # send
-    # ============================================================
-
-    def set_username(
-        self, client: ClientProtocol, user_id: str, username: str
-    ) -> asyncio.Task[None]:
-        return asyncio.create_task(
-            self.sockets[client].emit("set_username", (user_id, username, BOTKEY))
-        )
-
-    def stars_and_rank(
-        self, client: ClientProtocol, user_id: str
-    ) -> asyncio.Task[None]:
-        return asyncio.create_task(self.sockets[client].emit("stars_and_rank", user_id))
-
-    def join_private(
-        self, client: ClientProtocol, queue_id: str, user_id: str
-    ) -> asyncio.Task[None]:
-        print(f"https://generals.io/games/{queue_id}")
-        return asyncio.create_task(
-            self.sockets[client].emit("join_private", (queue_id, user_id, BOTKEY))
-        )
-
-    def set_force_start(
-        self, client: ClientProtocol, queue_id, do_force: bool
-    ) -> asyncio.Task[None]:
-        return asyncio.create_task(
-            self.sockets[client].emit("set_force_start", (queue_id, do_force))
-        )
-
-    def leave_game(self, client: ClientProtocol) -> asyncio.Task[None]:
-        return asyncio.create_task(self.sockets[client].emit("leave_game"))
-
-    def surrender(self, client: ClientProtocol) -> asyncio.Task[None]:
-        return asyncio.create_task(self.sockets[client].emit("surrender"))
-
-    def attack(
-        self, client: ClientProtocol, start: int, end: int, is50: bool
-    ) -> asyncio.Task[None]:
-        return asyncio.create_task(
-            self.sockets[client].emit("attack", (start, end, is50))
-        )
-
-    # ============================================================
-    # run
-    # ============================================================
-
-    async def connect(self, client: ClientProtocol, user_id: str) -> None:
-        c = AsyncClient(ssl_verify=False)
-        self.sockets[client] = c
-        c.event(client.stars)
-        c.event(client.rank)
-        c.event(client.chat_message)
-        c.event(client.notify)
-        c.event(client.queue_update)
-        c.event(client.pre_game_start)
-        c.event(client.game_start)
-        c.event(client.game_update)
-        c.event(client.game_won)
-        c.event(client.game_lost)
-        c.event(client.game_over)
-        await c.connect(WSURL, transports=["websocket"])
-
-    async def disconnect(self, client: ClientProtocol, user_id: str) -> None:
-        c = self.sockets[client]
-        del self.sockets[client]
-        await c.disconnect()
-        await c.wait()
-
-    async def run(self) -> None:
-        pass

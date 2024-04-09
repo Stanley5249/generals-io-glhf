@@ -9,8 +9,8 @@ import igraph as ig
 from glhf.base import ClientProtocol
 from glhf.bot import Bot
 from glhf.cli import main
-from glhf.helper import patch
-from glhf.server import make_2d_grid
+from glhf.server._local import make_2d_grid
+from glhf.utils.map import patch
 from ortools.sat.python import cp_model as cp
 
 

@@ -12,10 +12,10 @@ from rich.console import Console
 from rich.style import Style
 from rich.text import Text
 
-from glhf.client import BasicClient
-from glhf.base import ClientProtocol, ServerProtocol
+from glhf.base import ServerProtocol, Agent
+from glhf.server._socketio import SocketioServer
 from glhf.gui import PygameGUI
-from glhf.server import LocalServer, SocketioServer
+from glhf.server import LocalServer
 
 
 class CLI:
@@ -28,11 +28,11 @@ class CLI:
 
     def __lazy_init__(self) -> None:
         self._server: ServerProtocol | None = None
-        self._clients: list[ClientProtocol] = []
+        self._agents: list[Agent] = []
 
     def show(self) -> None:
         """Display the server and client information."""
-        self._console.print(self._server, self._clients)
+        self._console.print(self._server, self._agents)
 
     def start(self, debug: bool = False) -> None:
         """Start the server.
@@ -43,7 +43,7 @@ class CLI:
         """
         if self._server is None:
             raise RuntimeError("server not set")
-        asyncio.run(start(self._server, self._clients), debug=debug)
+        asyncio.run(start(self._server, self._agents), debug=debug)
         self.__lazy_init__()
 
     def server(self, name: str | Literal["local", "socketio"] = "local") -> None:
@@ -69,7 +69,7 @@ class CLI:
             else:
                 self._server = cls()
 
-    def client(self, bot: str) -> None:
+    def agent(self, bot: str) -> None:
         """Add a bot to the client list.
 
         Args:
@@ -92,8 +92,8 @@ class CLI:
             USERID = "h4K1gOyHNnkGngym8fUuYA"
             USERNAME = "PsittaTestBot"
             gui = PygameGUI()
-            client = BasicClient(USERID, USERNAME, bot_obj, gui, self._server)
-            self._clients.append(client)
+            agent = Agent(USERID, USERNAME, bot_obj, gui)
+            self._agents.append(agent)
 
 
 def set_eager_task_factory(is_eager: bool) -> None:
@@ -101,12 +101,12 @@ def set_eager_task_factory(is_eager: bool) -> None:
     loop.set_task_factory(asyncio.eager_task_factory if is_eager else None)  # type: ignore
 
 
-async def start(server: ServerProtocol, clients: Sequence[ClientProtocol]) -> None:
+async def start(server: ServerProtocol, agents: Sequence[Agent]) -> None:
     set_eager_task_factory(True)
 
     async with asyncio.TaskGroup() as g:
-        for client in clients:
-            g.create_task(client.run())
+        for agent in agents:
+            g.create_task(agent.run(server))
 
 
 def main(file: str = "") -> None:

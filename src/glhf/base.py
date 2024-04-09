@@ -2,84 +2,100 @@ from __future__ import annotations
 
 import asyncio
 from abc import abstractmethod
+from dataclasses import dataclass, field
 from typing import Any, Protocol
 
-from glhf.typing_ import GameStartDict, GameUpdateDict, QueueUpdateDict
-from glhf.utils import methodlike
+from glhf.gui import PygameGUI
+from glhf.typing import GameStartDict, GameUpdateDict, QueueUpdateDict
+from glhf.utils.method import methodlike
 
 __all__ = "ServerProtocol", "ClientProtocol", "BotProtocol"
 
 
+@dataclass(frozen=True, slots=True)
+class Agent:
+    id: str = field(compare=True)
+    name: str = field(compare=True)
+    bot: BotProtocol = field(compare=False)
+    gui: PygameGUI | None = field(compare=False)
+
+    # ============================================================
+    # receive
+    # ============================================================
+
+    def stars(self, data: dict[str, float]) -> Any:
+        self.bot.stars(data)
+        # if self.gui:
+        #     self.gui.stars(data)
+
+    def rank(self, data: dict[str, int]) -> Any:
+        self.bot.rank(data)
+        # if self.gui:
+        #     self.gui.rank(data)
+
+    def chat_message(self, chat_room: str, data: dict[str, Any]) -> Any:
+        self.bot.chat_message(chat_room, data)
+        # if self.gui:
+        #     self.gui.chat_message(chat_room, data)
+
+    def notify(self, data: Any) -> Any:
+        self.bot.notify(data)
+        # if self.gui:
+        #     self.gui.notify(data)
+
+    def queue_update(self, data: QueueUpdateDict) -> Any:
+        self.bot.queue_update(data)
+        # if self.gui:
+        #     self.gui.queue_update(data)
+
+    def pre_game_start(self) -> Any:
+        self.bot.pre_game_start()
+        # if self.gui:
+        #     self.gui.pre_game_start()
+
+    def game_start(self, data: GameStartDict) -> Any:
+        self.bot.game_start(data)
+        if self.gui:
+            self.gui.game_start(data)
+
+    def game_update(self, data: GameUpdateDict) -> Any:
+        self.bot.game_update(data)
+        if self.gui:
+            self.gui.game_update(data)
+
+    def game_won(self) -> Any:
+        self.bot.game_won()
+        # if self.gui:
+        #     self.gui.game_won()
+
+    def game_lost(self) -> Any:
+        self.bot.game_lost()
+        # if self.gui:
+        #     self.gui.game_lost()
+
+    def game_over(self) -> Any:
+        self.bot.game_over()
+        if self.gui:
+            self.gui.game_over()
+
+    async def run(self, server: ServerProtocol) -> None:
+        client = await server.connect(self)
+        try:
+            if self.gui:
+                with self.gui:
+                    await self.bot.run(client)
+            else:
+                await self.bot.run(client)
+        finally:
+            await server.disconnect(self)
+
+
 class ServerProtocol(Protocol):
-    # ============================================================
-    # send
-    # ============================================================
+    @abstractmethod
+    async def connect(self, agent: Agent) -> ClientProtocol: ...
 
     @abstractmethod
-    def set_username(
-        self,
-        client: ClientProtocol,
-        user_id: str,
-        username: str,
-    ) -> asyncio.Task[None]: ...
-
-    @abstractmethod
-    def stars_and_rank(
-        self,
-        client: ClientProtocol,
-        user_id: str,
-    ) -> asyncio.Task[None]: ...
-
-    @abstractmethod
-    def join_private(
-        self,
-        client: ClientProtocol,
-        queue_id: str,
-        user_id: str,
-    ) -> asyncio.Task[None]: ...
-
-    @abstractmethod
-    def set_force_start(
-        self,
-        client: ClientProtocol,
-        queue_id: str,
-        do_force: bool,
-    ) -> asyncio.Task[None]: ...
-
-    @abstractmethod
-    def leave_game(
-        self,
-        client: ClientProtocol,
-    ) -> asyncio.Task[None]: ...
-
-    @abstractmethod
-    def surrender(
-        self,
-        client: ClientProtocol,
-    ) -> asyncio.Task[None]: ...
-
-    @abstractmethod
-    def attack(
-        self, client: ClientProtocol, start: int, end: int, is50: bool
-    ) -> asyncio.Task[None]: ...
-
-    # ============================================================
-    # run
-    # ============================================================
-
-    @abstractmethod
-    async def connect(
-        self,
-        client: ClientProtocol,
-        user_id: str,
-    ) -> None: ...
-
-    @abstractmethod
-    async def disconnect(
-        self,
-        client: ClientProtocol,
-        user_id: str,
-    ) -> None: ...
+    async def disconnect(self, agent: Agent) -> None: ...
 
 
 class ClientProtocol(Protocol):
@@ -87,38 +103,38 @@ class ClientProtocol(Protocol):
     # recieve
     # ============================================================
 
-    @abstractmethod
-    def stars(self, data: dict[str, float]) -> Any: ...
+    # @abstractmethod
+    # def stars(self, data: dict[str, float]) -> Any: ...
 
-    @abstractmethod
-    def rank(self, data: dict[str, int]) -> Any: ...
+    # @abstractmethod
+    # def rank(self, data: dict[str, int]) -> Any: ...
 
-    @abstractmethod
-    def chat_message(self, chat_room: str, data: dict[str, Any]) -> Any: ...
+    # @abstractmethod
+    # def chat_message(self, chat_room: str, data: dict[str, Any]) -> Any: ...
 
-    @abstractmethod
-    def notify(self, data: Any, _: Any = None) -> Any: ...
+    # @abstractmethod
+    # def notify(self, data: Any, _: Any = None) -> Any: ...
 
-    @abstractmethod
-    def queue_update(self, data: QueueUpdateDict) -> Any: ...
+    # @abstractmethod
+    # def queue_update(self, data: dict) -> Any: ...
 
-    @abstractmethod
-    def pre_game_start(self) -> Any: ...
+    # @abstractmethod
+    # def pre_game_start(self) -> Any: ...
 
-    @abstractmethod
-    def game_start(self, data: GameStartDict, _: Any = None) -> Any: ...
+    # @abstractmethod
+    # def game_start(self, data: dict, _: Any = None) -> Any: ...
 
-    @abstractmethod
-    def game_update(self, data: GameUpdateDict, _: Any = None) -> Any: ...
+    # @abstractmethod
+    # def game_update(self, data: dict, _: Any = None) -> Any: ...
 
-    @abstractmethod
-    def game_won(self, _1: Any = None, _2: Any = None) -> Any: ...
+    # @abstractmethod
+    # def game_won(self, _1: Any = None, _2: Any = None) -> Any: ...
 
-    @abstractmethod
-    def game_lost(self, _1: Any = None, _2: Any = None) -> Any: ...
+    # @abstractmethod
+    # def game_lost(self, _1: Any = None, _2: Any = None) -> Any: ...
 
-    @abstractmethod
-    def game_over(self, _1: Any = None, _2: Any = None) -> Any: ...
+    # @abstractmethod
+    # def game_over(self, _1: Any = None, _2: Any = None) -> Any: ...
 
     # ============================================================
     # send
@@ -144,13 +160,6 @@ class ClientProtocol(Protocol):
 
     @abstractmethod
     def attack(self, start: int, end: int, is50: bool) -> asyncio.Task[None]: ...
-
-    # ============================================================
-    # run
-    # ============================================================
-
-    @abstractmethod
-    async def run(self) -> None: ...
 
 
 class BotProtocol(Protocol):
