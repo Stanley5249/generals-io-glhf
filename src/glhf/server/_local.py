@@ -242,7 +242,7 @@ class LocalClient(ClientProtocol):
     async def join_private(self, queue_id: str) -> None:
         self._queue_id = queue_id
         await self._server.join_private(self._agent, self._queue_id)
-        print(f"https://generals.io/games/{queue_id}")
+        print(queue_id)
 
     @to_task
     async def set_force_start(self, do_force: bool) -> None:

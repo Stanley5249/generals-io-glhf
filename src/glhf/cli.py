@@ -79,10 +79,6 @@ class CLI:
             ValueError: If the provided bot name is unknown.
 
         """
-
-        if self._server is None:
-            raise RuntimeError("server not set")
-
         try:
             bot_cls = getattr(self._module, bot)
         except AttributeError:
@@ -110,7 +106,6 @@ async def start(server: ServerProtocol, agents: Sequence[Agent]) -> None:
 
 
 def main(file: str = "") -> None:
-
     if file:
         location = pathlib.Path(file)
         name = location.stem
