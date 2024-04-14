@@ -1,11 +1,10 @@
 from typing import Any
 
-from glhf.base import BotProtocol
 from glhf.typing import GameStartDict, GameUpdateDict, QueueUpdateDict
 from glhf.utils.method import asignalize, astreamify
 
 
-class Bot(BotProtocol):
+class Bot:
     """The `Bot` class is a subclass of `BotProtocol`. It allows customization by overriding the `run` method for specific game interactions. Alternatively, you can create a class that adheres to the `BotProtocol` interface.
 
     Subclassing `Bot` provides additional functionality:

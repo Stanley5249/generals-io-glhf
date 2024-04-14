@@ -3,13 +3,48 @@ from __future__ import annotations
 import asyncio
 from abc import abstractmethod
 from dataclasses import dataclass, field
-from typing import Any, Protocol
+from typing import Any, Protocol, runtime_checkable
 
 from glhf.gui import PygameGUI
 from glhf.typing import GameStartDict, GameUpdateDict, QueueUpdateDict
 from glhf.utils.method import methodlike
 
-__all__ = "ServerProtocol", "ClientProtocol", "BotProtocol"
+__all__ = "ServerProtocol", "ClientProtocol", "BotProtocol", "Agent"
+
+
+class ServerProtocol(Protocol):
+    @abstractmethod
+    async def connect(self, agent: Agent) -> ClientProtocol: ...
+
+    @abstractmethod
+    async def disconnect(self, agent: Agent) -> None: ...
+
+
+class ClientProtocol(Protocol):
+    # ============================================================
+    # send
+    # ============================================================
+
+    @abstractmethod
+    def set_username(self) -> asyncio.Task[None]: ...
+
+    @abstractmethod
+    def stars_and_rank(self) -> asyncio.Task[None]: ...
+
+    @abstractmethod
+    def join_private(self, queue_id: str) -> asyncio.Task[None]: ...
+
+    @abstractmethod
+    def set_force_start(self, do_force: bool) -> asyncio.Task[None]: ...
+
+    @abstractmethod
+    def leave_game(self) -> asyncio.Task[None]: ...
+
+    @abstractmethod
+    def surrender(self) -> asyncio.Task[None]: ...
+
+    @abstractmethod
+    def attack(self, start: int, end: int, is50: bool) -> asyncio.Task[None]: ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -90,78 +125,7 @@ class Agent:
             await server.disconnect(self)
 
 
-class ServerProtocol(Protocol):
-    @abstractmethod
-    async def connect(self, agent: Agent) -> ClientProtocol: ...
-
-    @abstractmethod
-    async def disconnect(self, agent: Agent) -> None: ...
-
-
-class ClientProtocol(Protocol):
-    # ============================================================
-    # recieve
-    # ============================================================
-
-    # @abstractmethod
-    # def stars(self, data: dict[str, float]) -> Any: ...
-
-    # @abstractmethod
-    # def rank(self, data: dict[str, int]) -> Any: ...
-
-    # @abstractmethod
-    # def chat_message(self, chat_room: str, data: dict[str, Any]) -> Any: ...
-
-    # @abstractmethod
-    # def notify(self, data: Any, _: Any = None) -> Any: ...
-
-    # @abstractmethod
-    # def queue_update(self, data: dict) -> Any: ...
-
-    # @abstractmethod
-    # def pre_game_start(self) -> Any: ...
-
-    # @abstractmethod
-    # def game_start(self, data: dict, _: Any = None) -> Any: ...
-
-    # @abstractmethod
-    # def game_update(self, data: dict, _: Any = None) -> Any: ...
-
-    # @abstractmethod
-    # def game_won(self, _1: Any = None, _2: Any = None) -> Any: ...
-
-    # @abstractmethod
-    # def game_lost(self, _1: Any = None, _2: Any = None) -> Any: ...
-
-    # @abstractmethod
-    # def game_over(self, _1: Any = None, _2: Any = None) -> Any: ...
-
-    # ============================================================
-    # send
-    # ============================================================
-
-    @abstractmethod
-    def set_username(self) -> asyncio.Task[None]: ...
-
-    @abstractmethod
-    def stars_and_rank(self) -> asyncio.Task[None]: ...
-
-    @abstractmethod
-    def join_private(self, queue_id: str) -> asyncio.Task[None]: ...
-
-    @abstractmethod
-    def set_force_start(self, do_force: bool) -> asyncio.Task[None]: ...
-
-    @abstractmethod
-    def leave_game(self) -> asyncio.Task[None]: ...
-
-    @abstractmethod
-    def surrender(self) -> asyncio.Task[None]: ...
-
-    @abstractmethod
-    def attack(self, start: int, end: int, is50: bool) -> asyncio.Task[None]: ...
-
-
+@runtime_checkable
 class BotProtocol(Protocol):
     # ============================================================
     # recieve

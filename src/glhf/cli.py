@@ -3,6 +3,7 @@ import importlib.util
 import pathlib
 import sys
 import traceback
+from inspect import getmembers, isclass
 from types import ModuleType
 from typing import Literal, Sequence
 
@@ -12,10 +13,10 @@ from rich.console import Console
 from rich.style import Style
 from rich.text import Text
 
-from glhf.base import ServerProtocol, Agent
-from glhf.server._socketio import SocketioServer
+from glhf.base import Agent, BotProtocol, ServerProtocol
 from glhf.gui import PygameGUI
 from glhf.server import LocalServer
+from glhf.server._socketio import SocketioServer
 
 
 class CLI:
@@ -30,6 +31,22 @@ class CLI:
         self._server: ServerProtocol | None = None
         self._agents: list[Agent] = []
 
+    def help(self) -> None:
+        """Display the help message."""
+        self._console.print(
+            "Commands:",
+            "  server [name]: Set the server type",
+            "  agent [name]: Add a bot to the client list",
+            "  show: Display the server and client information",
+            "  start [debug]: Start the server",
+            "  exit: Exit the program",
+            sep="\n",
+        )
+
+        for k, v in getmembers(self._module, isclass):
+            if issubclass(v, BotProtocol):
+                self._console.print(f"  {k}: {v}")
+
     def show(self) -> None:
         """Display the server and client information."""
         self._console.print(self._server, self._agents)
@@ -43,6 +60,8 @@ class CLI:
         """
         if self._server is None:
             raise RuntimeError("server not set")
+        if not self._agents:
+            raise RuntimeError("no agents added")
         asyncio.run(start(self._server, self._agents), debug=debug)
         self.__lazy_init__()
 
