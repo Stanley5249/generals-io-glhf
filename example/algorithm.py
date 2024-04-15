@@ -66,6 +66,13 @@ def link_edges(edges: Iterable[tuple[int, int]], *, start: int = 0) -> list[int]
     raise ValueError("path does not start from the specified start vertex")
 
 
+# TODO fix remainder bug in scheduling
+# for example, now we have:
+# .  | 5 | 3 | 1
+# 11 | 6 | 3 | .
+# but it supposed to be:
+# .  | 5 | 3 | 2
+# 11 | 6 | 3 | .
 def scheduling_pcvrp(
     n_vertices: int,
     edges: Sequence[tuple[int, int]],
