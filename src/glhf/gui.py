@@ -1,37 +1,24 @@
+from __future__ import annotations
+
 from functools import lru_cache
 from itertools import product
+from multiprocessing import Process, Queue
 from os import PathLike
 from pathlib import Path
-from threading import Event, Thread
-from typing import IO, Sequence
+from queue import Empty
+from typing import IO, Any, Generator, Protocol, Self, Sequence
 
 import pygame
-from pygame import (
-    Color,
-    Rect,
-    Surface,
-    Vector2,
-    display,
-    draw,
-    event,
-    font,
-    image,
-    mouse,
-    sprite,
-    time,
-    transform,
-)
+import pygame.font
 
 from glhf.typing import GameStartDict, GameUpdateDict
 from glhf.utils.map import patch
-from glhf.utils.method import signalize, streamify
-
-__all__ = ("PygameGUI",)
 
 type AnyPath = str | bytes | PathLike[str] | PathLike[bytes]
 type FileArg = AnyPath | IO[bytes] | IO[str]
 type Coordinate = Sequence[float]
 
+RESDIR = Path(__file__).parent / "resource"
 PALETTE = (
     0x222222FF,
     0x393939FF,
@@ -51,12 +38,10 @@ PALETTE = (
     0x0000FFFF,
     0x483D8BFF,
 )
-PALETTE = tuple(map(Color, PALETTE))
-ARROWS = "↑↓←→"
-WHITE = Color("white")
-BLACK = Color("black")
-
-path = Path(__file__).parent
+PALETTE = tuple(map(pygame.Color, PALETTE))
+WHITE = pygame.Color("white")
+BLACK = pygame.Color("black")
+# ARROWS = "↑↓←→"
 
 
 class CachedResource:
@@ -64,20 +49,19 @@ class CachedResource:
 
     def __init__(
         self,
-        font_: FileArg = path / "resource/Quicksand-Bold.ttf",
-        city: FileArg = path / "resource/city.png",
-        crown: FileArg = path / "resource/crown.png",
-        mountain: FileArg = path / "resource/mountain.png",
-        obstacle: FileArg = path / "resource/obstacle.png",
+        font_: FileArg = RESDIR / "Quicksand-Bold.ttf",
+        city: FileArg = RESDIR / "city.png",
+        crown: FileArg = RESDIR / "crown.png",
+        mountain: FileArg = RESDIR / "mountain.png",
+        obstacle: FileArg = RESDIR / "obstacle.png",
     ) -> None:
         self.font_ = font_
-        load = image.load
-        self.city = load(city).convert_alpha()
-        self.crown = load(crown).convert_alpha()
-        self.mountain = load(mountain).convert_alpha()
-        self.obstacle = load(obstacle).convert_alpha()
+        self.city = pygame.image.load(city).convert_alpha()
+        self.crown = pygame.image.load(crown).convert_alpha()
+        self.mountain = pygame.image.load(mountain).convert_alpha()
+        self.obstacle = pygame.image.load(obstacle).convert_alpha()
 
-    def render_cell(self, size: int, terrain: int, army: int) -> Surface:
+    def render_cell(self, size: int, terrain: int, army: int) -> pygame.Surface:
         """
         Render the terrain without army.
 
@@ -108,29 +92,29 @@ class CachedResource:
         return self.render_terrain(size, terrain)
 
     @lru_cache(256)
-    def render_terrain_army(self, size: int, terrain: int, army: int) -> Surface:
+    def render_terrain_army(self, size: int, terrain: int, army: int) -> pygame.Surface:
         cell = self.render_terrain(size, terrain).copy()
         cell.blit(*self.render_army(size, army))
         return cell
 
     @lru_cache(16)
-    def get_font(self, size: int) -> font.Font:
-        return font.Font(self.font_, round((size - 12) ** 0.5) + 10)
+    def get_font(self, size: int) -> pygame.font.Font:
+        return pygame.font.Font(self.font_, round((size - 12) ** 0.5) + 10)
 
     @lru_cache(512)
-    def render_army(self, size: int, army: int) -> tuple[Surface, Rect]:
+    def render_army(self, size: int, army: int) -> tuple[pygame.Surface, pygame.Rect]:
         s = str(army)
         render = self.get_font(size).render
         text = render(s, True, WHITE)
         shadow = render(s, True, BLACK)
-        surf = transform.box_blur(shadow, 2)
+        surf = pygame.transform.box_blur(shadow, 2)
         surf.blit(text, (0, 0))
         m = size // 2
         rect = surf.get_rect(center=(m, m))
         return surf, rect
 
     @lru_cache(256)
-    def render_terrain(self, size: int, terrain: int) -> Surface:
+    def render_terrain(self, size: int, terrain: int) -> pygame.Surface:
         if terrain < 0:
             if terrain < -2:
                 cell = self.render_index(size, 1)
@@ -155,21 +139,23 @@ class CachedResource:
         return cell
 
     @classmethod
-    def render_index(cls, size: int, index: int) -> Surface:
-        cell = Surface((size, size))
+    def render_index(cls, size: int, index: int) -> pygame.Surface:
+        cell = pygame.Surface((size, size))
         if index == 1:
             cell.fill(PALETTE[1])
         else:
             s = size - 1
-            draw.rect(cell, PALETTE[index], (1, 1, s, s))
-            draw.rect(cell, BLACK, (0, 0, size, size), 1)
+            pygame.draw.rect(cell, PALETTE[index], (1, 1, s, s))
+            pygame.draw.rect(cell, BLACK, (0, 0, size, size), 1)
         return cell
 
     @classmethod
-    def render_image(cls, size: int, image: Surface) -> tuple[Surface, Rect]:
+    def render_image(
+        cls, size: int, image: pygame.Surface
+    ) -> tuple[pygame.Surface, pygame.Rect]:
         s = size * 25 // 32
         m = size // 2
-        surf = transform.smoothscale(image, (s, s))
+        surf = pygame.transform.smoothscale(image, (s, s))
         rect = surf.get_rect(center=(m, m))
         return surf, rect
 
@@ -183,10 +169,10 @@ class CachedResource:
         }
 
 
-class BackgroundSprite(sprite.DirtySprite):
+class BackgroundSprite(pygame.sprite.DirtySprite):
     def __init__(self, *group) -> None:
         super().__init__(*group)
-        self.image = Surface((0, 0))
+        self.image = pygame.Surface((0, 0))
         self.rect = self.image.get_rect()
         self.layer = 0
 
@@ -195,16 +181,16 @@ class BackgroundSprite(sprite.DirtySprite):
         window_resize: bool,
         window_size: tuple[int, int] | None = None,
     ) -> None:
-        assert isinstance(self.rect, Rect)
+        assert isinstance(self.rect, pygame.Rect)
         if window_resize:
-            window_size = window_size or display.get_window_size()
-            self.image = Surface(window_size)
+            window_size = window_size or pygame.display.get_window_size()
+            self.image = pygame.Surface(window_size)
             self.rect.size = window_size
             self.image.fill(PALETTE[0])
             self.dirty = 1
 
 
-class MapSprite(sprite.DirtySprite):
+class MapSprite(pygame.sprite.DirtySprite):
     # image: Surface
     # rect: Rect
 
@@ -214,11 +200,11 @@ class MapSprite(sprite.DirtySprite):
         window_size: tuple[int, int] | None = None,
     ) -> None:
         super().__init__(*groups)
-        x, y = window_size or display.get_window_size()
+        x, y = window_size or pygame.display.get_window_size()
         self.zoom = 3
         self.cell_size = 12
-        self.center = Vector2(x // 2, y // 2)
-        self.image = Surface((0, 0))
+        self.center = pygame.Vector2(x // 2, y // 2)
+        self.image = pygame.Surface((0, 0))
         self.rect = self.image.get_rect(center=self.center)
         self.data = None
         self.layer = 1
@@ -230,17 +216,17 @@ class MapSprite(sprite.DirtySprite):
         # self._turn = 0
 
     @lru_cache(16)
-    def get_image(self, size: tuple[int, int]) -> Surface:
-        return Surface(size)
+    def get_image(self, size: tuple[int, int]) -> pygame.Surface:
+        return pygame.Surface(size)
 
     def fast_update(
         self,
         zoom: int,
-        move: tuple[float, float] | Vector2,
+        move: tuple[float, float] | pygame.Vector2,
         data: GameUpdateDict | None,
     ) -> None:
-        assert isinstance(self.rect, Rect)
-        assert isinstance(self.image, Surface)
+        assert isinstance(self.rect, pygame.Rect)
+        assert isinstance(self.image, pygame.Surface)
 
         skip = True
         resize = False
@@ -266,7 +252,7 @@ class MapSprite(sprite.DirtySprite):
             skip = False
             resize = True
             s = 12 + z * z
-            p = mouse.get_pos()
+            p = pygame.mouse.get_pos()
             c = self.center
             c -= p
             c *= s / self.cell_size
@@ -315,7 +301,7 @@ class MapSprite(sprite.DirtySprite):
                 if i >= 0 and terrain[i] >= 0:
                     terrain[i] += 24
 
-            rr = self.rect.clip((0, 0), display.get_window_size())
+            rr = self.rect.clip((0, 0), pygame.display.get_window_size())
             x, y = self.rect.topleft
             rr.move_ip(-x, -y)
 
@@ -335,91 +321,116 @@ class MapSprite(sprite.DirtySprite):
         self.dirty = 1
 
 
-class PygameGUI(Thread):
-    WINDOWSIZE = 800, 600
+class State(Protocol):
+    def __call__(self, window: pygame.Surface, queue: Queue[Any]) -> Self | None: ...
 
-    @streamify
-    def game_start(self, data: GameStartDict) -> GameStartDict:
-        return data
 
-    @streamify
-    def game_update(self, data: GameUpdateDict) -> GameUpdateDict:
-        return data
+class PygameGUI:
+    def __init__(self) -> None:
+        self.queue: Queue[Any] = Queue()
+        self.process = Process(target=main, args=(self.queue,))
 
-    @signalize
+    def game_start(self, data: GameStartDict) -> None:
+        self.queue.put(("game_start", data))
+
+    def game_update(self, data: GameUpdateDict) -> None:
+        self.queue.put(("game_update", data))
+
     def game_over(self) -> None:
-        self.game_update.close()
+        self.queue.put(("game_over", None))
 
-    def __init__(self, **kwargs) -> None:
-        super().__init__(name=f"{type(self).__name__}-{id(self):X}", **kwargs)
-        self.quit = Event()
+    def connect(self) -> None:
+        self.process.start()
 
-    def __enter__(self) -> None:
-        self.start()
+    def disconnect(self) -> None:
+        self.queue.put(None)
+        self.process.join()
 
-    def __exit__(self, exc_type, exc_val, exc_tb) -> None:
-        if exc_type is None:
-            self.quit.wait()
-        self.join()
 
-    def main(self, window: Surface) -> None:
-        clock = time.Clock()
-
-        bg = BackgroundSprite()
-        bg.fast_update(True)
-        map_ = MapSprite()
-
-        group = sprite.LayeredDirty(bg, map_)
-        rects = group.draw(window)
-        display.update(rects)
-
-        move = Vector2()
-
-        while not self.quit.is_set():
-            window_resize = False
-            zoom = 0
-            move.update()
-
-            for e in event.get():
-                if e.type == pygame.QUIT:
-                    self.quit.set()
-                elif e.type == pygame.WINDOWSIZECHANGED:
-                    window_resize = True
-                elif e.type == pygame.MOUSEWHEEL:
-                    zoom += e.x + e.y
-                elif e.type == pygame.MOUSEMOTION:
-                    if e.buttons[0] == 1:
-                        move += e.rel
-
-            bg.fast_update(window_resize)
-            map_.fast_update(zoom, move, self.game_update.get())
-
-            rects = group.draw(window)
-            if rects:
-                display.update(rects)
-
-            clock.tick(60)
-            # print(f"\r{clock.get_fps():0>7.1f}", end="")
-
-    def run(self) -> None:
-        pygame.init()
-        # pygame.RESIZABLE | pygame.SCALED
+def get_stream[T](queue: Queue[T]) -> Generator[Any, Any, T | None]:
+    while True:
         try:
-            window = display.set_mode(self.WINDOWSIZE)
-            while not self.quit.is_set():
-                for e in event.get():
-                    if e.type == pygame.QUIT:
-                        return
-                if self.game_start.get() is not None:
-                    self.main(window)
-        finally:
-            pygame.quit()
-            self.quit.set()
+            yield queue.get_nowait()
+        except Empty:
+            return
+
+
+def get_data[T](queue: Queue[T], event: str = "") -> T | None:
+    try:
+        return queue.get_nowait()
+    except Empty:
+        return
+
+
+def state_game(window: pygame.Surface, queue: Queue[Any]) -> State | None:
+    clock = pygame.time.Clock()
+
+    bg = BackgroundSprite()
+    bg.fast_update(True)
+    map_ = MapSprite()
+
+    group = pygame.sprite.LayeredDirty(bg, map_)
+    rects = group.draw(window)
+    pygame.display.update(rects)
+
+    move = pygame.Vector2()
+
+    while True:
+        window_resize = False
+        zoom = 0
+        move.update()
+
+        for e in pygame.event.get():
+            if e.type == pygame.QUIT:
+                return
+            elif e.type == pygame.WINDOWSIZECHANGED:
+                window_resize = True
+            elif e.type == pygame.MOUSEWHEEL:
+                zoom += e.x + e.y
+            elif e.type == pygame.MOUSEMOTION:
+                if e.buttons[0] == 1:
+                    move += e.rel
+
+        data = get_data(queue)
+        if data is not None:
+            if data[0] == "game_update":
+                data = data[1]
+            else:
+                data = None
+
+        bg.fast_update(window_resize)
+        map_.fast_update(zoom, move, data)
+
+        rects = group.draw(window)
+        if rects:
+            pygame.display.update(rects)
+
+        clock.tick(60)
+
+
+def state_lobby(window: pygame.Surface, queue: Queue[Any]) -> State | None:
+    while True:
+        for e in pygame.event.get():
+            if e.type == pygame.QUIT:
+                return
+
+            match get_data(queue):
+                case None:
+                    continue
+                case ("game_start", _data):
+                    return state_game
+
+
+def main(queue: Queue[Any]) -> None:
+    pygame.init()
+    window = pygame.display.set_mode((800, 600))
+    state: State | None = state_lobby
+    while state is not None:
+        state = state(window, queue)
+    pygame.quit()
 
 
 if __name__ == "__main__":
-
-    def main() -> None:
-        pass
-
-    main()
+    gui = PygameGUI()
+    gui.connect()
+    gui.disconnect()

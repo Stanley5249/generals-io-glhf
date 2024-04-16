@@ -114,14 +114,14 @@ class Agent:
             self.gui.game_over()
 
     async def run(self, server: ServerProtocol) -> None:
-        client = await server.connect(self)
         try:
+            client = await server.connect(self)
             if self.gui:
-                with self.gui:
-                    await self.bot.run(client)
-            else:
-                await self.bot.run(client)
+                self.gui.connect()
+            await self.bot.run(client)
         finally:
+            if self.gui:
+                self.gui.disconnect()
             await server.disconnect(self)
 
 
