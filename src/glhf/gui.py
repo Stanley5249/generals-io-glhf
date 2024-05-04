@@ -6,6 +6,7 @@ from multiprocessing import Process, Queue
 from os import PathLike
 from pathlib import Path
 from queue import Empty
+import time
 from typing import IO, Any, Generator, Protocol, Self, Sequence
 
 import pygame
@@ -341,6 +342,7 @@ class PygameGUI:
 
     def connect(self) -> None:
         self.process.start()
+        time.sleep(2)
 
     def disconnect(self) -> None:
         self.queue.put(None)
