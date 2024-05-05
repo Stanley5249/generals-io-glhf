@@ -71,76 +71,87 @@ def scheduling_pcvrp(
     n_vertices: int,
     edges: Sequence[tuple[int, int]],
     n_paths: int,
+    n_turns: int,
+    army_rate_in_turns: int,
+    army_rate_in_secs: float,
+    timeout: float,
     n_lands_hints: Sequence[int] | None,
     n_turns_hints: Sequence[int] | None,
-    mpt: int,
-    tpr: int,
-    tps: float,
-    timeout: float,
     heuristics: bool,
     verbose: bool,
 ) -> list[tuple[int, list[int]]]:
     # ====================== constant =======================
-    # | apt             | armies per turn           | 1     |
+
     # ====================== variable =======================
     # | n_paths         | number of paths           | 5     |
-    # | mpt             | moves per turn            | 2     |
-    # | tpr             | turns per round           | 25    |
-    # | tps             | turns per second          | 1.0   |
+    # +-----------------+---------------------------+-------+
+    # | n_turns         | number of turns           | 50    |
+    # +-----------------+---------------------------+-------+
+    # | army_rate_in_   | The period for generating | 2 /   |
+    # | (turns/secs)    | an army in turns/seconds  | 1.0   |
+    # +-----------------+---------------------------+-------+
+
     # ====================== derived ========================
-    # | mpr             | moves per round           | 50    |
+    # | min_n_lands     | minimum number of lands   | 8     |
+    # |                 | avoid failure to complete |       |
+    # |                 | on time                   |       |
+    # +-----------------+---------------------------+-------+
+    # | max_n_lands     | maximum number of lands   | 24    |
+    # +-----------------+---------------------------+-------+
     # | max_len_path    | maximum length of paths   | 16    |
-    # =======================================================
+    # +-----------------+---------------------------+-------+
 
     t_start = time.monotonic()
 
     solver = cp.CpSolver()
     model = cp.CpModel()
 
-    mpr = mpt * tpr
-    max_len_path = mpr // (mpt + 1)
-    min_start_n_lands = math.ceil((timeout + 1e-3) / tps)
-    max_n_lands = tpr - 1
+    min_n_lands = math.ceil((timeout + 1e-3) / army_rate_in_secs)
+    max_n_lands = n_turns // army_rate_in_turns - 1
+    max_len_path = n_turns // (army_rate_in_turns + 1)
 
     acc_n_lands_vars = [model.new_constant(0)]
     acc_n_lands_vars += (
-        model.new_int_var(0, max_n_lands, f"acc_n_lands[{i}]")
+        model.new_int_var(min_n_lands, max_n_lands, f"acc_n_lands[{i}]")
         for i in range(1, n_paths + 1)
     )
 
-    start_turn_var = acc_n_lands_vars[1] * mpt
+    start_turn_var = acc_n_lands_vars[1] * army_rate_in_turns
     turn_vars = [start_turn_var]
     turn_vars += (
-        model.new_int_var(0, mpr, f"turn[{i}]") for i in range(1, n_paths + 1)
+        model.new_int_var(0, n_turns, f"turn[{i}]") for i in range(1, n_paths + 1)
     )
 
     n_lands_vars = [j - i for i, j in pairwise(acc_n_lands_vars)]
     n_turns_vars = [j - i for i, j in pairwise(turn_vars)]
 
+    for var in n_lands_vars:
+        model.add(var <= max_len_path)
+
+    for var in n_turns_vars:
+        model.add(var <= max_len_path)  # type: ignore
+
     sum_lands_var = acc_n_lands_vars[n_paths]
     sum_turns_var = turn_vars[n_paths]
 
     # n_lands[0] * 2 + sum(n_turns) == mpr
-    model.add(sum_turns_var == mpr)
+    model.add(sum_turns_var == n_turns)
 
     # 16 <= sum(n_lands) <= 24
     model.add(sum_lands_var >= max_len_path)
-
-    # n_lands[0] >= floor(timeout / 1.0)
-    model.add(n_lands_vars[0] >= min_start_n_lands)  # type: ignore
 
     # (n_lands[i] <= n_turns[i]) for i in range(5)
     for var_1 in range(n_paths):
         model.add(n_lands_vars[var_1] <= n_turns_vars[var_1])  # type: ignore
 
     for var_1 in range(2, n_paths + 1):
-        var = turn_vars[var_1 - 1] - acc_n_lands_vars[var_1] * mpt
+        var = turn_vars[var_1 - 1] - acc_n_lands_vars[var_1] * army_rate_in_turns
         model.add(var >= 0)  # type: ignore
 
         cond = model.new_bool_var("")
-        model.add(turn_vars[var_1] < mpr).only_enforce_if(cond)
-        model.add(turn_vars[var_1] == mpr).only_enforce_if(cond.negated())
-        model.add(var < mpt).only_enforce_if(cond)  # type: ignore
+        model.add(turn_vars[var_1] < n_turns).only_enforce_if(cond)
+        model.add(turn_vars[var_1] == n_turns).only_enforce_if(cond.negated())
+        model.add(var < army_rate_in_turns).only_enforce_if(cond)  # type: ignore
 
     # [12, 6, 4, 2, 0]
     if n_lands_hints is not None:
@@ -156,12 +167,6 @@ def scheduling_pcvrp(
 
     # heuristic
     if heuristics:
-        for var in n_lands_vars:
-            model.add(var <= max_len_path)
-
-        for var in n_turns_vars:
-            model.add(var <= max_len_path)  # type: ignore
-
         for var_1, var_2 in pairwise(n_lands_vars):
             model.add(var_1 >= var_2)  # type: ignore
 
@@ -246,12 +251,12 @@ def opening_moves(
     graph: ig.Graph,
     general_index: int,
     *,
-    n_paths: int = 5,
     d_max: int = 16,
-    mpt: int = 2,
-    tpr: int = 25,
-    tps: float = 1.0,
-    timeout: float = 5.9,
+    n_paths: int = 5,
+    n_turns: int = 50,
+    army_rate_in_turns: int = 2,
+    army_rate_in_secs: float = 1.0,
+    timeout: float = 7.9,
     heuristics: bool = True,
     verbose: bool = False,
 ) -> list[tuple[int, list[int]]]:
@@ -277,12 +282,12 @@ def opening_moves(
         n,
         h_edges,
         n_paths,
+        n_turns,
+        army_rate_in_turns,
+        army_rate_in_secs,
+        timeout,
         n_lands_hints,
         n_turns_hints,
-        mpt,
-        tpr,
-        tps,
-        timeout,
         heuristics,
         verbose,
     )
