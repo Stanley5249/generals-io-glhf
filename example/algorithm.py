@@ -67,13 +67,6 @@ def link_edges(edges: Iterable[tuple[int, int]], *, start: int = 0) -> list[int]
     raise ValueError("path does not start from the specified start vertex")
 
 
-# TODO fix remainder bug in scheduling
-# for example, now we have:
-# .  | 5 | 3 | 1
-# 11 | 6 | 3 | .
-# but it supposed to be:
-# .  | 5 | 3 | 2
-# 11 | 6 | 3 | .
 def scheduling_pcvrp(
     n_vertices: int,
     edges: Sequence[tuple[int, int]],
@@ -87,14 +80,14 @@ def scheduling_pcvrp(
     heuristics: bool,
     verbose: bool,
 ) -> list[tuple[int, list[int]]]:
-    # ============================ constant =================
+    # ====================== constant =======================
     # | apt             | armies per turn           | 1     |
-    # ============================ variable =================
+    # ====================== variable =======================
     # | n_paths         | number of paths           | 5     |
     # | mpt             | moves per turn            | 2     |
     # | tpr             | turns per round           | 25    |
     # | tps             | turns per second          | 1.0   |
-    # ============================ derived ==================
+    # ====================== derived ========================
     # | mpr             | moves per round           | 50    |
     # | max_len_path    | maximum length of paths   | 16    |
     # =======================================================
@@ -109,8 +102,7 @@ def scheduling_pcvrp(
     min_start_n_lands = math.ceil((timeout + 1e-3) / tps)
     max_n_lands = tpr - 1
 
-    start_n_lands_var = model.new_constant(0)
-    acc_n_lands_vars = [start_n_lands_var]
+    acc_n_lands_vars = [model.new_constant(0)]
     acc_n_lands_vars += (
         model.new_int_var(0, max_n_lands, f"acc_n_lands[{i}]")
         for i in range(1, n_paths + 1)
@@ -125,12 +117,6 @@ def scheduling_pcvrp(
     n_lands_vars = [j - i for i, j in pairwise(acc_n_lands_vars)]
     n_turns_vars = [j - i for i, j in pairwise(turn_vars)]
 
-    for var in n_lands_vars:
-        model.add(var <= max_len_path)
-
-    for var in n_turns_vars:
-        model.add(var <= max_len_path)  # type: ignore
-
     sum_lands_var = acc_n_lands_vars[n_paths]
     sum_turns_var = turn_vars[n_paths]
 
@@ -144,38 +130,43 @@ def scheduling_pcvrp(
     model.add(n_lands_vars[0] >= min_start_n_lands)  # type: ignore
 
     # (n_lands[i] <= n_turns[i]) for i in range(5)
-    for i in range(n_paths):
-        model.add(n_lands_vars[i] <= n_turns_vars[i])  # type: ignore
+    for var_1 in range(n_paths):
+        model.add(n_lands_vars[var_1] <= n_turns_vars[var_1])  # type: ignore
 
-    for i in range(2, n_paths + 1):
-        var = turn_vars[i - 1] - acc_n_lands_vars[i] * mpt
+    for var_1 in range(2, n_paths + 1):
+        var = turn_vars[var_1 - 1] - acc_n_lands_vars[var_1] * mpt
         model.add(var >= 0)  # type: ignore
-        # model.add(var < mpt)  # type: ignore
-        cond = model.new_bool_var(f"cond[{i}]")
-        model.add(turn_vars[i] < mpr).only_enforce_if(cond)
-        model.add(turn_vars[i] == mpr).only_enforce_if(cond.negated())
+
+        cond = model.new_bool_var("")
+        model.add(turn_vars[var_1] < mpr).only_enforce_if(cond)
+        model.add(turn_vars[var_1] == mpr).only_enforce_if(cond.negated())
         model.add(var < mpt).only_enforce_if(cond)  # type: ignore
 
-    # n_lands_hints = [12, 6, 4, 2, 0]
-    # if n_lands_hints is not None:
-    #     assert len(n_lands_hints) == n_paths, "invalid length of `n_lands_hints`"
-    #     for var, n_lands in zip(n_lands_vars, n_lands_hints):
-    #         model.add_hint(var, n_lands)  # type: ignore
+    # [12, 6, 4, 2, 0]
+    if n_lands_hints is not None:
+        assert len(n_lands_hints) == n_paths, "invalid length of `n_lands_hints`"
+        for var, val in zip(acc_n_lands_vars[1:], accumulate(n_lands_hints)):
+            model.add_hint(var, val)  # type: ignore
 
-    # n_turns_hints = [12, 8, 4, 2, 0]
-    # if n_turns_hints is not None:
-    #     assert len(n_turns_hints) == n_paths, "invalid length of `n_turns_hints`"
-
-    #     for var, n_turns in zip(n_turns_vars, n_turns_hints):
-    #         model.add_hint(var, n_turns)  # type: ignore
+    # [12, 8, 4, 2, 0]
+    if n_turns_hints is not None:
+        assert len(n_turns_hints) == n_paths, "invalid length of `n_turns_hints`"
+        for var, val in zip(turn_vars[1:], accumulate(n_turns_hints)):
+            model.add_hint(var, val)  # type: ignore
 
     # heuristic
-    # n_lands[i] >= n_lands[i+1] for i in range(5 - 1)
-    # n_turns[i] >= n_turns[i+1] for i in range(5 - 1)
     if heuristics:
-        for i, j in pairwise(range(n_paths)):
-            model.add(n_lands_vars[i] >= n_lands_vars[j])  # type: ignore
-            model.add(n_turns_vars[i] >= n_turns_vars[j])  # type: ignore
+        for var in n_lands_vars:
+            model.add(var <= max_len_path)
+
+        for var in n_turns_vars:
+            model.add(var <= max_len_path)  # type: ignore
+
+        for var_1, var_2 in pairwise(n_lands_vars):
+            model.add(var_1 >= var_2)  # type: ignore
+
+        for var_1, var_2 in pairwise(n_turns_vars):
+            model.add(var_1 >= var_2)  # type: ignore
 
     # objective
     model.maximize(sum_lands_var)
@@ -183,24 +174,26 @@ def scheduling_pcvrp(
     edge_vars_list = []
     new_visited_vars = [0] * (n_vertices - 1)
 
-    for i in range(n_paths):
+    for var_1 in range(n_paths):
         vertex_vars = [
-            model.new_bool_var(f"#{i} vertex-{v}") for v in range(1, n_vertices)
+            model.new_bool_var(f"#{var_1} vertex-{v}") for v in range(1, n_vertices)
         ]
-        edge_vars = [model.new_bool_var(f"#{i} edge-{u}-{v}") for u, v in edges]
-        sink_vars = [model.new_bool_var(f"#{i} sink-{t}") for t in range(n_vertices)]
+        edge_vars = [model.new_bool_var(f"#{var_1} edge-{u}-{v}") for u, v in edges]
+        sink_vars = [
+            model.new_bool_var(f"#{var_1} sink-{t}") for t in range(n_vertices)
+        ]
 
         old_visited_vars = new_visited_vars
         new_visited_vars = [
-            model.new_bool_var(f"#{i} visited-{v}") for v in range(1, n_vertices)
+            model.new_bool_var(f"#{var_1} visited-{v}") for v in range(1, n_vertices)
         ]
 
         sum_vertex_var = cp.LinearExpr.sum(vertex_vars)
         sum_old_visited_var = cp.LinearExpr.sum(old_visited_vars)
         sum_new_visited_var = cp.LinearExpr.sum(new_visited_vars)
 
-        model.add(sum_vertex_var <= n_turns_vars[i])  # type: ignore
-        model.add(sum_new_visited_var == sum_old_visited_var + n_lands_vars[i])
+        model.add(sum_vertex_var <= n_turns_vars[var_1])  # type: ignore
+        model.add(sum_new_visited_var == sum_old_visited_var + n_lands_vars[var_1])
         model.add_exactly_one(sink_vars)
 
         for a, b, c in zip(vertex_vars, old_visited_vars, new_visited_vars):
