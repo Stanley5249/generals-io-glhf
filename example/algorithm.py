@@ -12,8 +12,8 @@ from ortools.sat.python import cp_model as cp
 class SchedulingCallback(cp.CpSolverSolutionCallback):
     def __init__(
         self,
-        n_lands_vars: Sequence[cp.IntVar],
-        n_turns_vars: Sequence[cp.IntVar],
+        n_lands_vars: Sequence[cp.LinearExprT],
+        n_turns_vars: Sequence[cp.LinearExprT],
     ) -> None:
         super().__init__()
         self.n_lands_vars = n_lands_vars
@@ -83,7 +83,7 @@ def scheduling_pcvrp(
     # ====================== constant =======================
 
     # ====================== variable =======================
-    # | n_paths         | number of paths           | 5     |
+    # | n_paths         | number of paths           | 5      |
     # +-----------------+---------------------------+-------+
     # | n_turns         | number of turns           | 50    |
     # +-----------------+---------------------------+-------+
@@ -106,99 +106,93 @@ def scheduling_pcvrp(
     solver = cp.CpSolver()
     model = cp.CpModel()
 
-    min_n_lands = math.ceil((timeout + 1e-3) / army_rate_in_secs)
+    min_n_lands = math.ceil((timeout + 1e-1) / army_rate_in_secs)
     max_n_lands = n_turns // army_rate_in_turns - 1
     max_len_path = n_turns // (army_rate_in_turns + 1)
 
-    acc_n_lands_vars = [model.new_constant(0)]
+    zero_var = model.new_constant(0)
+
+    acc_n_lands_vars = [zero_var]
     acc_n_lands_vars += (
         model.new_int_var(min_n_lands, max_n_lands, f"acc_n_lands[{i}]")
         for i in range(1, n_paths + 1)
     )
 
-    start_turn_var = acc_n_lands_vars[1] * army_rate_in_turns
-    turn_vars = [start_turn_var]
-    turn_vars += (
-        model.new_int_var(0, n_turns, f"turn[{i}]") for i in range(1, n_paths + 1)
-    )
+    turn_vars = [
+        model.new_int_var(0, n_turns, f"turn[{i}]") for i in range(n_paths + 1)
+    ]
 
-    n_lands_vars = [j - i for i, j in pairwise(acc_n_lands_vars)]
-    n_turns_vars = [j - i for i, j in pairwise(turn_vars)]
-
-    for var in n_lands_vars:
-        model.add(var <= max_len_path)
-
-    for var in n_turns_vars:
-        model.add(var <= max_len_path)  # type: ignore
-
+    init_turn_var = turn_vars[0]
     sum_lands_var = acc_n_lands_vars[n_paths]
     sum_turns_var = turn_vars[n_paths]
 
-    # n_lands[0] * 2 + sum(n_turns) == mpr
+    model.add(init_turn_var == acc_n_lands_vars[1] * army_rate_in_turns)
+    model.add(sum_lands_var >= max_len_path)
     model.add(sum_turns_var == n_turns)
 
-    # 16 <= sum(n_lands) <= 24
-    model.add(sum_lands_var >= max_len_path)
+    n_lands_exprs = [j - i for i, j in pairwise(acc_n_lands_vars)]
+    n_turns_exprs = [j - i for i, j in pairwise(turn_vars)]
 
-    # (n_lands[i] <= n_turns[i]) for i in range(5)
-    for var_1 in range(n_paths):
-        model.add(n_lands_vars[var_1] <= n_turns_vars[var_1])  # type: ignore
+    for expr in n_lands_exprs:
+        model.add(expr <= max_len_path)
 
-    for var_1 in range(2, n_paths + 1):
-        var = turn_vars[var_1 - 1] - acc_n_lands_vars[var_1] * army_rate_in_turns
-        model.add(var >= 0)  # type: ignore
+    for expr in n_turns_exprs:
+        model.add(expr <= max_len_path)
 
-        cond = model.new_bool_var("")
-        model.add(turn_vars[var_1] < n_turns).only_enforce_if(cond)
-        model.add(turn_vars[var_1] == n_turns).only_enforce_if(cond.negated())
-        model.add(var < army_rate_in_turns).only_enforce_if(cond)  # type: ignore
+    for expr_1, expr_2 in zip(n_lands_exprs, n_turns_exprs):
+        model.add(expr_1 <= expr_2)  # type: ignore
 
-    # [12, 6, 4, 2, 0]
+    for i in range(2, n_paths + 1):
+        expr = turn_vars[i - 1] - acc_n_lands_vars[i] * army_rate_in_turns
+        model.add(expr >= 0)  # type: ignore
+
+        is_end_var = model.new_bool_var("")
+        is_not_end_var = is_end_var.negated()
+
+        model.add(turn_vars[i] < n_turns).only_enforce_if(is_not_end_var)
+        model.add(turn_vars[i] == n_turns).only_enforce_if(is_end_var)
+        model.add(expr < army_rate_in_turns).only_enforce_if(is_not_end_var)
+
     if n_lands_hints is not None:
         assert len(n_lands_hints) == n_paths, "invalid length of `n_lands_hints`"
         for var, val in zip(acc_n_lands_vars[1:], accumulate(n_lands_hints)):
-            model.add_hint(var, val)  # type: ignore
+            model.add_hint(var, val)
 
-    # [12, 8, 4, 2, 0]
     if n_turns_hints is not None:
         assert len(n_turns_hints) == n_paths, "invalid length of `n_turns_hints`"
         for var, val in zip(turn_vars[1:], accumulate(n_turns_hints)):
-            model.add_hint(var, val)  # type: ignore
+            model.add_hint(var, val)
 
-    # heuristic
     if heuristics:
-        for var_1, var_2 in pairwise(n_lands_vars):
-            model.add(var_1 >= var_2)  # type: ignore
+        for expr_1, expr_2 in pairwise(n_lands_exprs):
+            model.add(expr_1 >= expr_2)  # type: ignore
 
-        for var_1, var_2 in pairwise(n_turns_vars):
-            model.add(var_1 >= var_2)  # type: ignore
+        for expr_1, expr_2 in pairwise(n_turns_exprs):
+            model.add(expr_1 >= expr_2)  # type: ignore
 
-    # objective
     model.maximize(sum_lands_var)
 
-    edge_vars_list = []
-    new_visited_vars = [0] * (n_vertices - 1)
+    edge_vars_foreach_path = []
+    new_visited_vars = [zero_var] * (n_vertices - 1)
 
-    for var_1 in range(n_paths):
+    for i in range(n_paths):
         vertex_vars = [
-            model.new_bool_var(f"#{var_1} vertex-{v}") for v in range(1, n_vertices)
+            model.new_bool_var(f"vertex[{i},{v}]") for v in range(1, n_vertices)
         ]
-        edge_vars = [model.new_bool_var(f"#{var_1} edge-{u}-{v}") for u, v in edges]
-        sink_vars = [
-            model.new_bool_var(f"#{var_1} sink-{t}") for t in range(n_vertices)
-        ]
+        edge_vars = [model.new_bool_var(f"edge[{i},({u},{v})]") for u, v in edges]
+        sink_vars = [model.new_bool_var(f"sink[{i},{v}]") for v in range(n_vertices)]
 
         old_visited_vars = new_visited_vars
         new_visited_vars = [
-            model.new_bool_var(f"#{var_1} visited-{v}") for v in range(1, n_vertices)
+            model.new_bool_var(f"visited[{i},{v}]") for v in range(1, n_vertices)
         ]
 
         sum_vertex_var = cp.LinearExpr.sum(vertex_vars)
-        sum_old_visited_var = cp.LinearExpr.sum(old_visited_vars)
         sum_new_visited_var = cp.LinearExpr.sum(new_visited_vars)
 
-        model.add(sum_vertex_var <= n_turns_vars[var_1])  # type: ignore
-        model.add(sum_new_visited_var == sum_old_visited_var + n_lands_vars[var_1])
+        model.add(sum_vertex_var <= n_turns_exprs[i])  # type: ignore
+        model.add(sum_new_visited_var == acc_n_lands_vars[i + 1])
+
         model.add_exactly_one(sink_vars)
 
         for a, b, c in zip(vertex_vars, old_visited_vars, new_visited_vars):
@@ -215,15 +209,11 @@ def scheduling_pcvrp(
         )
         model.add_circuit(arcs)
 
-        edge_vars_list.append(edge_vars)
+        edge_vars_foreach_path.append(edge_vars)
 
-    # solve
-    callback = (
-        SchedulingCallback(n_lands_vars, n_turns_vars)  # type: ignore
-        if verbose
-        else None
-    )  # type: ignore
+    callback = SchedulingCallback(n_lands_exprs, n_turns_exprs) if verbose else None
     t_end = time.monotonic()
+
     solver.parameters.max_time_in_seconds = timeout - (t_end - t_start)
     status = solver.solve(model, callback)
 
@@ -232,15 +222,12 @@ def scheduling_pcvrp(
         print(status_name)
 
     if status in (cp.OPTIMAL, cp.FEASIBLE):
-        start_turns = accumulate(
-            (solver.value(var) for var in n_turns_vars),  # type: ignore
-            initial=solver.value(start_turn_var),
-        )
+        turns = (solver.value(var) for var in turn_vars[:n_paths])
         paths = (
             link_edges(e for e, var in zip(edges, vars) if solver.boolean_value(var))
-            for vars in edge_vars_list
+            for vars in edge_vars_foreach_path
         )
-        return list(zip(start_turns, paths))
+        return list(zip(turns, paths))
     else:
         if status == cp.MODEL_INVALID:
             print(model.validate())
@@ -256,7 +243,7 @@ def opening_moves(
     n_turns: int = 50,
     army_rate_in_turns: int = 2,
     army_rate_in_secs: float = 1.0,
-    timeout: float = 7.9,
+    timeout: float = 5.7,
     heuristics: bool = True,
     verbose: bool = False,
 ) -> list[tuple[int, list[int]]]:
