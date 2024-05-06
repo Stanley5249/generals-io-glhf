@@ -6,7 +6,7 @@ from queue import Empty, Queue
 from threading import Event
 from typing import Any, Callable, Concatenate, Coroutine, Protocol, Self, overload
 
-__all__ = (
+__all__ = [
     "methodlike",
     "streamify",
     "signalize",
@@ -14,7 +14,7 @@ __all__ = (
     "asignalize",
     "to_coro",
     "to_task",
-)
+]
 
 
 # ============================================================

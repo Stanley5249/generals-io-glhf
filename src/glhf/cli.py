@@ -14,7 +14,7 @@ from rich.style import Style
 from rich.text import Text
 
 from glhf.base import Agent, BotProtocol, ServerProtocol
-from glhf.gui import PygameGUI
+from glhf.gui._pygame import PygameGUI
 from glhf.server import LocalServer
 from glhf.server._socketio import SocketioServer
 

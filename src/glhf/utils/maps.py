@@ -1,7 +1,4 @@
-__all__ = (
-    "patch",
-    "make_diff",
-)
+__all__ = ["patch", "make_diff"]
 
 
 def coord_to_name(coord: tuple[int, int]) -> str:

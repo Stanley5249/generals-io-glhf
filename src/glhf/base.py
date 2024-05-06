@@ -5,9 +5,9 @@ from abc import abstractmethod
 from dataclasses import dataclass, field
 from typing import Any, Protocol, runtime_checkable
 
-from glhf.gui import PygameGUI
+from glhf.gui._pygame import PygameGUI
 from glhf.typing import GameStartDict, GameUpdateDict, QueueUpdateDict
-from glhf.utils.method import methodlike
+from glhf.utils.methods import methodlike
 
 __all__ = "ServerProtocol", "ClientProtocol", "BotProtocol", "Agent"
 

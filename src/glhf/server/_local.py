@@ -15,8 +15,8 @@ from bidict import KeyDuplicationError, ValueDuplicationError, bidict
 
 from glhf.base import Agent, ClientProtocol, ServerProtocol
 from glhf.typing import GameStartDict, GameUpdateDict, QueueUpdateDict
-from glhf.utils.map import make_diff
-from glhf.utils.method import to_task
+from glhf.utils.maps import make_diff
+from glhf.utils.methods import to_task
 
 
 def make_2d_grid(

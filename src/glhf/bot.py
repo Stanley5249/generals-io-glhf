@@ -1,7 +1,7 @@
 from typing import Any
 
 from glhf.typing import GameStartDict, GameUpdateDict, QueueUpdateDict
-from glhf.utils.method import asignalize, astreamify
+from glhf.utils.methods import asignalize, astreamify
 
 
 class Bot:

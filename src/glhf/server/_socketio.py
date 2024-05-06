@@ -4,7 +4,7 @@ from socketio import AsyncClient
 
 from glhf.base import Agent, ClientProtocol
 from glhf.typing import GameStartDict, GameUpdateDict, QueueUpdateDict
-from glhf.utils.method import to_task
+from glhf.utils.methods import to_task
 
 WSURL = "wss://ws.generals.io"
 BOTKEY = "sd09fjd203i0ejwi_changeme"

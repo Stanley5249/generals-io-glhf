@@ -8,7 +8,7 @@ from collections import deque
 from glhf.base import ClientProtocol
 from glhf.bot import Bot
 from glhf.cli import main
-from glhf.utils.map import patch
+from glhf.utils.maps import patch
 
 from algorithm import make_graph, opening_moves
 
