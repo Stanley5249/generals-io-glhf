@@ -2,8 +2,7 @@ import asyncio
 import importlib.util
 import pathlib
 import sys
-import traceback
-from inspect import getmembers, isclass
+from inspect import getmembers_static, isclass
 from types import ModuleType
 from typing import Literal, Sequence
 
@@ -14,101 +13,97 @@ from rich.style import Style
 from rich.text import Text
 
 from glhf.base import Agent, BotProtocol, ServerProtocol
-from glhf.gui._pygame import PygameGUI
+from glhf.gui import PygameGUI
 from glhf.server import LocalServer
 from glhf.server._socketio import SocketioServer
 
+USERID = "h4K1gOyHNnkGngym8fUuYA"
+USERNAME = "PsittaTestBot"
+
 
 class CLI:
-    """Command Line Interface for managing clients and starting the server"""
-
     def __init__(self, module: ModuleType, console: Console) -> None:
         self._module = module
         self._console = console
-        self.__lazy_init__()
-
-    def __lazy_init__(self) -> None:
         self._server: ServerProtocol | None = None
         self._agents: list[Agent] = []
+        self._server_types: dict[str, type[ServerProtocol]] = {
+            "local": LocalServer,
+            "socketio": SocketioServer,
+        }
+        self._bot_types = {
+            k: v
+            for k, v in getmembers_static(self._module, isclass)
+            if issubclass(v, BotProtocol)
+        }
+        if not self._bot_types:
+            self._console.print("No bots found in module!")
 
-    def help(self) -> None:
-        """Display the help message."""
-        self._console.print(
-            "Commands:",
-            "  server [name]: Set the server type",
-            "  agent [name]: Add a bot to the client list",
-            "  show: Display the server and client information",
-            "  start [debug]: Start the server",
-            "  exit: Exit the program",
-            sep="\n",
-        )
+        self._bot_indices = tuple(self._bot_types.keys())
 
-        for k, v in getmembers(self._module, isclass):
-            if issubclass(v, BotProtocol):
-                self._console.print(f"  {k}: {v}")
+    def list(self) -> None:
+        for i, k in enumerate(self._bot_indices):
+            self._console.print(f"{i}: {k}")
 
     def show(self) -> None:
-        """Display the server and client information."""
         self._console.print(self._server, self._agents)
 
     def start(self, debug: bool = False) -> None:
-        """Start the server.
-
-        Args:
-            debug (bool, optional): Whether to enable debug mode. Defaults to False.
-
-        """
         if self._server is None:
-            raise RuntimeError("server not set")
+            self._console.print(
+                f"No server set. Use the '{self.server.__name__}' command to set the server type."
+            )
+            return
         if not self._agents:
-            raise RuntimeError("no agents added")
-        asyncio.run(start(self._server, self._agents), debug=debug)
-        self.__lazy_init__()
-
-    def server(self, name: str | Literal["local", "socketio"] = "local") -> None:
-        """Set the server type.
-
-        Args:
-            name (str | Literal["local", "socketio"], optional): The server type to set. Defaults to "socketio".
-
-        Raises:
-            ValueError: If the provided server name is unknown.
-
-        """
-
-        if name == "local":
-            self._server = LocalServer(15, 15)
-        elif name == "socketio":
-            self._server = SocketioServer()
-        else:
-            try:
-                cls = getattr(self._module, name)
-            except AttributeError:
-                raise ValueError(f"unknown server: {name}")
-            else:
-                self._server = cls()
-
-    def agent(self, bot: str) -> None:
-        """Add a bot to the client list.
-
-        Args:
-            name (str): The name of the bot to add.
-
-        Raises:
-            ValueError: If the provided bot name is unknown.
-
-        """
+            self._console.print(
+                f"No agents added. Use the '{self.add.__name__}' command to add a bot."
+            )
+            return
         try:
-            bot_cls = getattr(self._module, bot)
-        except AttributeError:
-            raise ValueError(f"unknown bot: {bot}")
-        else:
-            bot_obj = bot_cls()
-            USERID = "h4K1gOyHNnkGngym8fUuYA"
-            USERNAME = "PsittaTestBot"
-            gui = PygameGUI()
-            agent = Agent(USERID, USERNAME, bot_obj, gui)
-            self._agents.append(agent)
+            asyncio.run(start(self._server, self._agents), debug=debug)
+        finally:
+            self._server = None
+            self._agents = []
+
+    def server(
+        self,
+        name: Literal["local", "socketio"] = "local",
+        *args,
+        **kwargs,
+    ) -> None:
+        try:
+            server_type = self._server_types[name]
+        except KeyError:
+            self._console.print(f"unknown server: {name}")
+            return
+        try:
+            self._server = server_type(*args, **kwargs)
+        except TypeError:
+            self._console.print_exception()
+
+    def add(
+        self,
+        key: str = "",
+        index: int = 0,
+        userid: str = USERID,
+        username: str = USERNAME,
+    ) -> None:
+        if not key:
+            try:
+                key = self._bot_indices[index]
+            except IndexError:
+                self._console.print(f"unknown bot index: {index}")
+                return
+        try:
+            bot_type = self._bot_types[key]
+        except KeyError:
+            self._console.print(f"unknown bot: {key}")
+            return
+
+        try:
+            self._agents.append(Agent(userid, username, bot_type(), PygameGUI()))
+        except TypeError:
+            self._console.print_exception()
 
 
 def set_eager_task_factory(is_eager: bool) -> None:
@@ -136,7 +131,6 @@ def main(file: str = "") -> None:
         assert spec.loader is not None, "spec.loader is None"
         spec.loader.exec_module(module)
     else:
-        # module = importlib.import_module('__main__')
         import __main__ as module
 
     console = Console()
@@ -156,11 +150,11 @@ def main(file: str = "") -> None:
             pass
 
         except EOFError:
-            console.print("GG!", style="b red")
+            console.print("GG!", style=Style(color="red", bold=True))
             break
 
         except Exception:
-            traceback.print_exc()
+            console.print_exception()
 
         finally:
             console.print()
