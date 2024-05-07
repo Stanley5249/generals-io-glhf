@@ -2,7 +2,7 @@ import asyncio
 import importlib.util
 import pathlib
 import sys
-from inspect import getmembers_static, isclass
+from operator import itemgetter
 from types import ModuleType
 from typing import Literal, Sequence
 
@@ -14,8 +14,7 @@ from rich.text import Text
 
 from glhf.base import Agent, BotProtocol, ServerProtocol
 from glhf.gui import PygameGUI
-from glhf.server import LocalServer
-from glhf.server._socketio import SocketioServer
+from glhf.server import LocalServer, SocketioServer
 
 USERID = "h4K1gOyHNnkGngym8fUuYA"
 USERNAME = "PsittaTestBot"
@@ -23,7 +22,6 @@ USERNAME = "PsittaTestBot"
 
 class APP:
     def __init__(self, module: ModuleType, console: Console) -> None:
-        self._module = module
         self._console = console
         self._server: ServerProtocol | None = None
         self._agents: list[Agent] = []
@@ -33,8 +31,8 @@ class APP:
         }
         self._bot_types = {
             k: v
-            for k, v in getmembers_static(self._module, isclass)
-            if issubclass(v, BotProtocol)
+            for k, v in sorted(vars(module).items(), key=itemgetter(0))
+            if isinstance(v, type) and issubclass(v, BotProtocol)
         }
         if not self._bot_types:
             self._console.print("No bots found in module!")
