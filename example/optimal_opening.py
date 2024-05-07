@@ -1,16 +1,14 @@
 import asyncio
-
+from collections import deque
 from secrets import token_urlsafe
 from typing import Iterable, Sequence
 
 import igraph as ig
-from collections import deque
+from algorithm import make_graph, opening_moves
+from glhf.app import cmd
 from glhf.base import ClientProtocol
 from glhf.bot import Bot
-from glhf.cli import main
 from glhf.utils.maps import patch
-
-from algorithm import make_graph, opening_moves
 
 type AttackT = tuple[int, int, bool]
 type AttackPathT = tuple[int, Sequence[int]]
@@ -87,4 +85,4 @@ class OptimalOpening(Bot):
 
 
 if __name__ == "__main__":
-    main()
+    cmd()

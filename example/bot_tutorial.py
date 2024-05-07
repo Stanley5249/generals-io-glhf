@@ -1,6 +1,6 @@
+from glhf.app import cmd
 from glhf.base import ClientProtocol
 from glhf.bot import Bot
-from glhf.cli import main
 
 
 class MyBot(Bot):
@@ -24,4 +24,4 @@ class MyBot(Bot):
 
 
 if __name__ == "__main__":
-    main()
+    cmd()

@@ -21,7 +21,7 @@ USERID = "h4K1gOyHNnkGngym8fUuYA"
 USERNAME = "PsittaTestBot"
 
 
-class CLI:
+class APP:
     def __init__(self, module: ModuleType, console: Console) -> None:
         self._module = module
         self._console = console
@@ -119,7 +119,7 @@ async def start(server: ServerProtocol, agents: Sequence[Agent]) -> None:
             g.create_task(agent.run(server))
 
 
-def main(file: str = "") -> None:
+def cmd(file: str = "") -> None:
     if file:
         location = pathlib.Path(file)
         name = location.stem
@@ -134,7 +134,7 @@ def main(file: str = "") -> None:
         import __main__ as module
 
     console = Console()
-    cli = CLI(module, console)
+    app = APP(module, console)
 
     name = "GLHF"
     prompt = Text.assemble(
@@ -144,7 +144,7 @@ def main(file: str = "") -> None:
 
     while True:
         try:
-            fire.Fire(cli, console.input(prompt), name)
+            fire.Fire(app, console.input(prompt), name)
 
         except FireExit:
             pass
@@ -158,7 +158,3 @@ def main(file: str = "") -> None:
 
         finally:
             console.print()
-
-
-if __name__ == "__main__":
-    main()

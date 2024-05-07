@@ -1,5 +1,6 @@
 import fire
-from glhf.cli import main
+
+from glhf.app import cmd
 
 if __name__ == "__main__":
-    fire.Fire(main)
+    fire.Fire(cmd)
