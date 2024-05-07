@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from functools import partial
 from multiprocessing import Queue
 from queue import Empty
 from typing import Any, Generator, Protocol, Self
@@ -9,7 +8,6 @@ import pygame
 import pygame.font
 
 from glhf.gui._pygame.render import BackgroundSprite, MapSprite, Renderer
-from glhf.gui._resource import FONT, IMG_CITY, IMG_CROWN, IMG_MOUNTAIN, IMG_OBSTACLE
 
 
 class PygameState(Protocol):
@@ -32,13 +30,7 @@ def get_data[T](queue: Queue[T]) -> T | None:
 
 
 def game(window: pygame.Surface, queue: Queue[Any]) -> PygameState | None:
-    renderer = Renderer(
-        pygame.image.load(IMG_CITY).convert_alpha(),
-        pygame.image.load(IMG_CROWN).convert_alpha(),
-        pygame.image.load(IMG_MOUNTAIN).convert_alpha(),
-        pygame.image.load(IMG_OBSTACLE).convert_alpha(),
-        partial(pygame.font.Font, FONT),
-    )
+    renderer = Renderer.from_files()
 
     clock = pygame.time.Clock()
 

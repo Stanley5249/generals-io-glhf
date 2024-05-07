@@ -1,13 +1,14 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from functools import lru_cache
+from functools import lru_cache, partial
 from itertools import product
-from typing import Callable, Sequence
+from typing import Callable, Self, Sequence
 
 import pygame
 import pygame.font
 
+from glhf.gui._resource import FONT, IMG_CITY, IMG_CROWN, IMG_MOUNTAIN, IMG_OBSTACLE
 from glhf.typing import GameUpdateDict
 from glhf.utils.maps import patch
 
@@ -151,6 +152,23 @@ class Renderer:
             f"army      {cls.render_army.cache_info()}\n"
             f"terrain   {cls.render_terrain.cache_info()}\n"
             f"all       {cls.render_terrain_army.cache_info()}\n"
+        )
+
+    @classmethod
+    def from_files(
+        cls,
+        city=IMG_CITY,
+        crown=IMG_CROWN,
+        mountain=IMG_MOUNTAIN,
+        obstacle=IMG_OBSTACLE,
+        font=FONT,
+    ) -> Self:
+        return cls(
+            pygame.image.load(city).convert_alpha(),
+            pygame.image.load(crown).convert_alpha(),
+            pygame.image.load(mountain).convert_alpha(),
+            pygame.image.load(obstacle).convert_alpha(),
+            partial(pygame.font.Font, font),
         )
 
 
