@@ -21,36 +21,43 @@ __all__ = [
 # typing
 # ============================================================
 
-type _MethodType[T, **P, R] = Callable[Concatenate[T, P], R]
 
-
-class _MethodLike[T, **P, R](Protocol):
+class MethodLike[T, **P, R](Protocol):
     @overload
     def __get__(
-        self,
-        instance: None,
-        owner: type[T],
-        /,
-    ) -> _MethodType[T, P, R]: ...
+        self, instance: None, owner: type[T], /
+    ) -> Callable[Concatenate[T, P], R]: ...
 
     @overload
     def __get__(
-        self,
-        instance: T,
-        owner: type[T] | None = None,
-        /,
+        self, instance: T, owner: type[T] | None = None, /
     ) -> Callable[P, R]: ...
 
 
-class _MethodDescriptor[T, **P, R](_MethodLike[T, P, R]):
+class MethodDescriptor[T, **P, R](MethodLike[T, P, R]):
+    wrapper: Callable[..., Callable[P, R]]
+
+    def __init_subclass__(cls, /, wrapper: Callable[..., Callable[P, R]]) -> None:
+        cls.wrapper = wrapper
+
+    def __init__(self, wrapped: Callable[Concatenate[T, P], R]) -> None:
+        self.wrapped = wrapped
+
     def __set_name__(self, owner: type[T], name: str) -> None:
         self.name = "_" + name
 
-    def __init__(self, wrapped: _MethodType[T, P, R]) -> None:
-        self.wrapped = wrapped
+    def __get__(self, instance: T | None, owner: type[T] | None = None) -> Any:
+        if instance is None:
+            return self.wrapped
+        try:
+            x = getattr(instance, self.name)
+        except AttributeError:
+            x = self.wrapper(partial(self.wrapped, instance))
+            setattr(instance, self.name, x)
+        return x
 
 
-def methodlike[T, **P, R](m: _MethodType[T, P, R]) -> _MethodLike[T, P, R]:
+def methodlike[T, **P, R](m: Callable[Concatenate[T, P], R]) -> MethodLike[T, P, R]:
     return m
 
 
@@ -59,7 +66,7 @@ def methodlike[T, **P, R](m: _MethodType[T, P, R]) -> _MethodLike[T, P, R]:
 # ============================================================
 
 
-class _Stream[**P, R]:
+class Stream[**P, R]:
     __wrapped__: Callable[P, R]
 
     def __init__(self, wrapped: Callable[P, R]) -> None:
@@ -102,7 +109,7 @@ class _Stream[**P, R]:
         self._queue.put_nowait(None)
 
 
-class _Signal[**P, R]:
+class Signal[**P, R]:
     __wrapped__: Callable[P, R]
 
     def __init__(self, wrapped: Callable[P, R]) -> None:
@@ -124,64 +131,12 @@ class _Signal[**P, R]:
         self.event.clear()
 
 
-class streamify[T, **P, R](_MethodDescriptor[T, P, R]):
-    @overload
-    def __get__(
-        self,
-        instance: None,
-        owner: type[T],
-    ) -> _MethodType[T, P, R]: ...
-
-    @overload
-    def __get__(
-        self,
-        instance: T,
-        owner: type[T] | None = None,
-    ) -> _Stream[P, R]: ...
-
-    def __get__(
-        self,
-        instance: T | None,
-        owner: type[T] | None = None,
-    ) -> Any:
-        if instance is None:
-            return self.wrapped
-        try:
-            x = getattr(instance, self.name)
-        except AttributeError:
-            x = _Stream(partial(self.wrapped, instance))
-            setattr(instance, self.name, x)
-        return x
+class streamify[T, **P, R](MethodDescriptor[T, P, R], wrapper=Stream[P, R]):
+    pass
 
 
-class signalize[T, **P, R](_MethodDescriptor[T, P, R]):
-    @overload
-    def __get__(
-        self,
-        instance: None,
-        owner: type[T],
-    ) -> _MethodType[T, P, R]: ...
-
-    @overload
-    def __get__(
-        self,
-        instance: T,
-        owner: type[T] | None = None,
-    ) -> _Signal[P, R]: ...
-
-    def __get__(
-        self,
-        instance: T | None,
-        owner: type[T] | None = None,
-    ) -> Any:
-        if instance is None:
-            return self.wrapped
-        try:
-            x = getattr(instance, self.name)
-        except AttributeError:
-            x = _Signal(partial(self.wrapped, instance))
-            setattr(instance, self.name, x)
-        return x
+class signalize[T, **P, R](MethodDescriptor[T, P, R], wrapper=Signal[P, R]):
+    pass
 
 
 # ============================================================
@@ -189,7 +144,7 @@ class signalize[T, **P, R](_MethodDescriptor[T, P, R]):
 # ============================================================
 
 
-class _AStream[**P, R]:
+class AStream[**P, R]:
     __wrapped__: Callable[P, R]
 
     def __init__(self, wrapped: Callable[P, R]) -> None:
@@ -232,7 +187,7 @@ class _AStream[**P, R]:
         self._queue.put_nowait(None)
 
 
-class _ASignal[**P, R]:
+class ASignal[**P, R]:
     __wrapped__: Callable[P, R]
 
     def __init__(self, wrapped: Callable[P, R]) -> None:
@@ -254,64 +209,12 @@ class _ASignal[**P, R]:
         self.event.clear()
 
 
-class astreamify[T, **P, R](_MethodDescriptor[T, P, R]):
-    @overload
-    def __get__(
-        self,
-        instance: None,
-        owner: type[T],
-    ) -> _MethodType[T, P, R]: ...
-
-    @overload
-    def __get__(
-        self,
-        instance: T,
-        owner: type[T] | None = None,
-    ) -> _AStream[P, R]: ...
-
-    def __get__(
-        self,
-        instance: T | None,
-        owner: type[T] | None = None,
-    ) -> Any:
-        if instance is None:
-            return self.wrapped
-        try:
-            x = getattr(instance, self.name)
-        except AttributeError:
-            x = _AStream(partial(self.wrapped, instance))
-            setattr(instance, self.name, x)
-        return x
+class astreamify[T, **P, R](MethodDescriptor[T, P, R], wrapper=AStream[P, R]):
+    pass
 
 
-class asignalize[T, **P, R](_MethodDescriptor[T, P, R]):
-    @overload
-    def __get__(
-        self,
-        instance: None,
-        owner: type[T],
-    ) -> _MethodType[T, P, R]: ...
-
-    @overload
-    def __get__(
-        self,
-        instance: T,
-        owner: type[T] | None = None,
-    ) -> _ASignal[P, R]: ...
-
-    def __get__(
-        self,
-        instance: T | None,
-        owner: type[T] | None = None,
-    ) -> Any:
-        if instance is None:
-            return self.wrapped
-        try:
-            x = getattr(instance, self.name)
-        except AttributeError:
-            x = _ASignal(partial(self.wrapped, instance))
-            setattr(instance, self.name, x)
-        return x
+class asignalize[T, **P, R](MethodDescriptor[T, P, R], wrapper=ASignal[P, R]):
+    pass
 
 
 def to_coro[**P, R](wrapped: Callable[P, R]) -> Callable[P, Coroutine[Any, Any, R]]:
