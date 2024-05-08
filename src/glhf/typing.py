@@ -1,6 +1,6 @@
 from typing import Any, Literal, NamedTuple, TypedDict
 
-__all__ = "QueueUpdateDict", "GameStartDict", "GameUpdateDict", "GameUpdateTuple"
+__all__ = ["QueueUpdateDict", "GameStartDict", "GameUpdateDict", "GameUpdateTuple"]
 
 
 class QueueUpdateDict(TypedDict):

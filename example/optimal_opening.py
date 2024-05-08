@@ -6,8 +6,7 @@ from typing import Iterable, Sequence
 import igraph as ig
 from algorithm import make_graph, opening_moves
 from glhf.app import cmd
-from glhf.base import ClientProtocol
-from glhf.bot import Bot
+from glhf.base import Bot, ClientProtocol
 from glhf.utils.maps import patch
 
 type AttackT = tuple[int, int, bool]

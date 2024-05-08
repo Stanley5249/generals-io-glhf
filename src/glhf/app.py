@@ -2,8 +2,6 @@ import asyncio
 import importlib.util
 import pathlib
 import sys
-from operator import itemgetter
-from types import ModuleType
 from typing import Literal, Sequence
 
 import fire
@@ -12,7 +10,7 @@ from rich.console import Console
 from rich.style import Style
 from rich.text import Text
 
-from glhf.base import Agent, BotProtocol, ServerProtocol
+from glhf.base import Bot, ServerProtocol
 from glhf.gui import PygameGUI
 from glhf.server import LocalServer, SocketioServer
 
@@ -21,19 +19,16 @@ USERNAME = "PsittaTestBot"
 
 
 class APP:
-    def __init__(self, module: ModuleType, console: Console) -> None:
+    def __init__(self, console: Console) -> None:
         self._console = console
         self._server: ServerProtocol | None = None
-        self._agents: list[Agent] = []
+        self._bots: list[Bot] = []
         self._server_types: dict[str, type[ServerProtocol]] = {
             "local": LocalServer,
             "socketio": SocketioServer,
         }
-        self._bot_types = {
-            k: v
-            for k, v in sorted(vars(module).items(), key=itemgetter(0))
-            if isinstance(v, type) and issubclass(v, BotProtocol)
-        }
+        self._bot_types = {bot.__name__: bot for bot in Bot.__subclasses__()}
+
         if not self._bot_types:
             self._console.print("No bots found in module!")
 
@@ -44,7 +39,7 @@ class APP:
             self._console.print(f"{i}: {k}")
 
     def show(self) -> None:
-        self._console.print(self._server, self._agents)
+        self._console.print(self._server, self._bots)
 
     def start(self, debug: bool = False) -> None:
         if self._server is None:
@@ -52,16 +47,16 @@ class APP:
                 f"No server set. Use the '{self.server.__name__}' command to set the server type."
             )
             return
-        if not self._agents:
+        if not self._bots:
             self._console.print(
-                f"No agents added. Use the '{self.add.__name__}' command to add a bot."
+                f"No bots added. Use the '{self.add.__name__}' command to add a bot."
             )
             return
         try:
-            asyncio.run(start(self._server, self._agents), debug=debug)
+            asyncio.run(start(self._server, self._bots), debug=debug)
         finally:
             self._server = None
-            self._agents = []
+            self._bots = []
 
     def server(
         self,
@@ -99,7 +94,7 @@ class APP:
             return
 
         try:
-            self._agents.append(Agent(userid, username, bot_type(), PygameGUI()))
+            self._bots.append(bot_type(userid, username, PygameGUI()))
         except TypeError:
             self._console.print_exception()
 
@@ -109,17 +104,18 @@ def set_eager_task_factory(is_eager: bool) -> None:
     loop.set_task_factory(asyncio.eager_task_factory if is_eager else None)  # type: ignore
 
 
-async def start(server: ServerProtocol, agents: Sequence[Agent]) -> None:
+async def start(server: ServerProtocol, bots: Sequence[Bot]) -> None:
     set_eager_task_factory(True)
 
     async with asyncio.TaskGroup() as g:
-        for agent in agents:
-            g.create_task(agent.run(server))
+        for bot in bots:
+            g.create_task(bot.start(server))
 
 
 def cmd(file: str = "") -> None:
     if file:
         location = pathlib.Path(file)
+        sys.path.append(str(location.parent.resolve()))
         name = location.stem
         spec = importlib.util.spec_from_file_location(name, location)
         if spec is None:
@@ -132,7 +128,7 @@ def cmd(file: str = "") -> None:
         import __main__ as module
 
     console = Console()
-    app = APP(module, console)
+    app = APP(console)
 
     name = "GLHF"
     prompt = Text.assemble(

@@ -1,30 +1,26 @@
 from __future__ import annotations
 
 import asyncio
-from abc import abstractmethod
-from dataclasses import dataclass, field
-from typing import Any, Protocol, runtime_checkable
+from abc import ABC, abstractmethod
+from dataclasses import dataclass
+from typing import Any, Protocol
 
-from glhf.gui._pygame import PygameGUI
+from glhf.gui import PygameGUI
 from glhf.typing import GameStartDict, GameUpdateDict, QueueUpdateDict
-from glhf.utils.methods import methodlike
+from glhf.utils.methods import asignalize, astreamify
 
-__all__ = "ServerProtocol", "ClientProtocol", "BotProtocol", "Agent"
+__all__ = ["ServerProtocol", "ClientProtocol", "Bot"]
 
 
 class ServerProtocol(Protocol):
     @abstractmethod
-    async def connect(self, agent: Agent) -> ClientProtocol: ...
+    async def connect(self, bot: Bot) -> ClientProtocol: ...
 
     @abstractmethod
-    async def disconnect(self, agent: Agent) -> None: ...
+    async def disconnect(self, bot: Bot) -> None: ...
 
 
 class ClientProtocol(Protocol):
-    # ============================================================
-    # send
-    # ============================================================
-
     @abstractmethod
     def set_username(self) -> asyncio.Task[None]: ...
 
@@ -47,140 +43,109 @@ class ClientProtocol(Protocol):
     def attack(self, start: int, end: int, is50: bool) -> asyncio.Task[None]: ...
 
 
-@dataclass(frozen=True, slots=True)
-class Agent:
-    id: str = field(compare=True)
-    name: str = field(compare=True)
-    bot: BotProtocol = field(compare=False)
-    gui: PygameGUI | None = field(compare=False)
+class GUIProtocol(Protocol): ...
+
+
+@dataclass(frozen=True)
+class Bot(ABC):
+    """The `Bot` class allows customization by overriding the `run` method for specific game interactions.
+
+    Subclassing `Bot` provides additional functionality:
+
+    The `queue_update`, `game_start`, and `game_update` methods are enhanced with the `astreamify` decorator. This decorator transforms these methods into an async generator, which can be used in an async for loop for server update processing.
+
+    Example:
+        ```python
+        class MyBot(Bot):
+            async def run(self, client: ClientProtocol) -> None:
+                ...
+                # process queue updates
+                async for data in self.queue_update:
+                    if not data["isForcing"]:
+                        client.set_force_start(True)
+
+                # wait for game start
+                await self.game_start.wait()
+
+                # process game updates
+                map_ = []
+                cities = []
+                async for data in self.game_update:
+                    map_ = patch(map_, data["map_diff"])
+                    cities = patch(cities, data["cities_diff"])
+                ...
+        ```
+
+    See Also:
+        - `astreamify`
+        - `asignalize`
+
+    """
+
+    id: str
+    name: str
+    gui: PygameGUI | None = None
 
     # ============================================================
-    # receive
+    # recieve
     # ============================================================
 
-    def stars(self, data: dict[str, float]) -> Any:
-        self.bot.stars(data)
-        # if self.gui:
-        #     self.gui.stars(data)
+    def stars(self, data: dict[str, float]) -> None:
+        pass
 
-    def rank(self, data: dict[str, int]) -> Any:
-        self.bot.rank(data)
-        # if self.gui:
-        #     self.gui.rank(data)
+    def rank(self, data: dict[str, int]) -> None:
+        pass
 
-    def chat_message(self, chat_room: str, data: dict[str, Any]) -> Any:
-        self.bot.chat_message(chat_room, data)
-        # if self.gui:
-        #     self.gui.chat_message(chat_room, data)
+    def chat_message(self, chat_room: str, data: dict[str, Any]) -> None:
+        pass
 
-    def notify(self, data: Any) -> Any:
-        self.bot.notify(data)
-        # if self.gui:
-        #     self.gui.notify(data)
+    def notify(self, data: Any) -> None:
+        pass
 
-    def queue_update(self, data: QueueUpdateDict) -> Any:
-        self.bot.queue_update(data)
-        # if self.gui:
-        #     self.gui.queue_update(data)
+    @astreamify
+    def queue_update(self, data: QueueUpdateDict) -> QueueUpdateDict:
+        return data
 
-    def pre_game_start(self) -> Any:
-        self.bot.pre_game_start()
-        # if self.gui:
-        #     self.gui.pre_game_start()
+    def pre_game_start(self) -> None:
+        pass
 
-    def game_start(self, data: GameStartDict) -> Any:
-        self.bot.game_start(data)
+    @astreamify
+    def game_start(self, data: GameStartDict) -> GameStartDict:
+        self.queue_update.close()
         if self.gui:
             self.gui.game_start(data)
+        return data
 
-    def game_update(self, data: GameUpdateDict) -> Any:
-        self.bot.game_update(data)
+    @astreamify
+    def game_update(self, data: GameUpdateDict) -> GameUpdateDict:
         if self.gui:
             self.gui.game_update(data)
+        return data
 
-    def game_won(self) -> Any:
-        self.bot.game_won()
-        # if self.gui:
-        #     self.gui.game_won()
+    @asignalize
+    def game_won(self) -> None:
+        pass
 
-    def game_lost(self) -> Any:
-        self.bot.game_lost()
-        # if self.gui:
-        #     self.gui.game_lost()
+    @asignalize
+    def game_lost(self) -> None:
+        pass
 
-    def game_over(self) -> Any:
-        self.bot.game_over()
+    @asignalize
+    def game_over(self) -> None:
+        self.game_update.close()
         if self.gui:
             self.gui.game_over()
 
-    async def run(self, server: ServerProtocol) -> None:
+    async def start(self, server: ServerProtocol) -> None:
         try:
             client = await server.connect(self)
             if self.gui:
                 self.gui.connect()
-            await self.bot.run(client)
+            await self.run(client)
         finally:
             if self.gui:
                 self.gui.disconnect()
             await server.disconnect(self)
 
-
-@runtime_checkable
-class BotProtocol(Protocol):
-    # ============================================================
-    # recieve
-    # ============================================================
-
-    @methodlike
-    @abstractmethod
-    def stars(self, data: dict[str, float]) -> Any: ...
-
-    @methodlike
-    @abstractmethod
-    def rank(self, data: dict[str, int]) -> Any: ...
-
-    @methodlike
-    @abstractmethod
-    def chat_message(self, chat_room: str, data: dict[str, Any]) -> Any: ...
-
-    @methodlike
-    @abstractmethod
-    def notify(self, data: Any) -> Any: ...
-
-    @methodlike
-    @abstractmethod
-    def queue_update(self, data: QueueUpdateDict) -> Any: ...
-
-    @methodlike
-    @abstractmethod
-    def pre_game_start(self) -> Any: ...
-
-    @methodlike
-    @abstractmethod
-    def game_start(self, data: GameStartDict) -> Any: ...
-
-    @methodlike
-    @abstractmethod
-    def game_update(self, data: GameUpdateDict) -> Any: ...
-
-    @methodlike
-    @abstractmethod
-    def game_won(self) -> Any: ...
-
-    @methodlike
-    @abstractmethod
-    def game_lost(self) -> Any: ...
-
-    @methodlike
-    @abstractmethod
-    def game_over(self) -> Any: ...
-
-    # ============================================================
-    # run
-    # ============================================================
-
     @abstractmethod
     async def run(self, client: ClientProtocol) -> None: ...
-
-
-class GUIProtocol(Protocol): ...

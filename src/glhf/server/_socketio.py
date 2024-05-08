@@ -2,7 +2,7 @@ from typing import Any
 
 from socketio import AsyncClient
 
-from glhf.base import Agent, ClientProtocol
+from glhf.base import Bot, ClientProtocol
 from glhf.typing import GameStartDict, GameUpdateDict, QueueUpdateDict
 from glhf.utils.methods import to_task
 
@@ -11,8 +11,8 @@ BOTKEY = "sd09fjd203i0ejwi_changeme"
 
 
 class SocketioClient(ClientProtocol):
-    def __init__(self, agent: Agent, socket: AsyncClient) -> None:
-        self._agent = agent
+    def __init__(self, bot: Bot, socket: AsyncClient) -> None:
+        self._bot = bot
         self._socket = socket
         self._queue_id = ""
 
@@ -21,37 +21,37 @@ class SocketioClient(ClientProtocol):
     # ============================================================
 
     def stars(self, data: dict[str, float]) -> None:
-        self._agent.stars(data)
+        self._bot.stars(data)
 
     def rank(self, data: dict[str, int]) -> None:
-        self._agent.rank(data)
+        self._bot.rank(data)
 
     def chat_message(self, chat_room: str, data: dict[str, Any]) -> None:
-        self._agent.chat_message(chat_room, data)
+        self._bot.chat_message(chat_room, data)
 
     def notify(self, data: Any, _: Any = None) -> None:
-        self._agent.notify(data)
+        self._bot.notify(data)
 
     def queue_update(self, data: dict) -> None:
-        self._agent.queue_update(QueueUpdateDict(**data))
+        self._bot.queue_update(QueueUpdateDict(**data))
 
     def pre_game_start(self) -> None:
-        self._agent.pre_game_start()
+        self._bot.pre_game_start()
 
     def game_start(self, data: dict, _: Any = None) -> None:
-        self._agent.game_start(GameStartDict(**data))
+        self._bot.game_start(GameStartDict(**data))
 
     def game_update(self, data: dict, _: Any = None) -> None:
-        self._agent.game_update(GameUpdateDict(**data))
+        self._bot.game_update(GameUpdateDict(**data))
 
     def game_won(self, _1: Any = None, _2: Any = None) -> None:
-        self._agent.game_won()
+        self._bot.game_won()
 
     def game_lost(self, _1: Any = None, _2: Any = None) -> None:
-        self._agent.game_lost()
+        self._bot.game_lost()
 
     def game_over(self, _1: Any = None, _2: Any = None) -> None:
-        self._agent.game_over()
+        self._bot.game_over()
 
     # ============================================================
     # send
@@ -59,18 +59,16 @@ class SocketioClient(ClientProtocol):
 
     @to_task
     async def set_username(self) -> None:
-        await self._socket.emit(
-            "set_username", (self._agent.id, self._agent.name, BOTKEY)
-        )
+        await self._socket.emit("set_username", (self._bot.id, self._bot.name, BOTKEY))
 
     @to_task
     async def stars_and_rank(self) -> None:
-        await self._socket.emit("stars_and_rank", self._agent.id)
+        await self._socket.emit("stars_and_rank", self._bot.id)
 
     @to_task
     async def join_private(self, queue_id: str) -> None:
         self._queue_id = queue_id
-        await self._socket.emit("join_private", (queue_id, self._agent.id, BOTKEY))
+        await self._socket.emit("join_private", (queue_id, self._bot.id, BOTKEY))
         print(f"https://generals.io/games/{queue_id}")
 
     @to_task
@@ -94,15 +92,15 @@ class SocketioClient(ClientProtocol):
 
 class SocketioServer:
     def __init__(self) -> None:
-        self._sockets: dict[Agent, AsyncClient] = {}
+        self._sockets: dict[Bot, AsyncClient] = {}
 
     # ============================================================
     # run
     # ============================================================
 
-    async def connect(self, agent: Agent) -> SocketioClient:
+    async def connect(self, bot: Bot) -> SocketioClient:
         socket = AsyncClient()
-        client = SocketioClient(agent, socket)
+        client = SocketioClient(bot, socket)
         socket.event(client.stars)
         socket.event(client.rank)
         socket.event(client.chat_message)
@@ -115,11 +113,11 @@ class SocketioServer:
         socket.event(client.game_lost)
         socket.event(client.game_over)
         await socket.connect(WSURL, transports=["websocket"])
-        self._sockets[agent] = socket
+        self._sockets[bot] = socket
         return client
 
-    async def disconnect(self, agent: Agent) -> None:
-        socket = self._sockets[agent]
+    async def disconnect(self, bot: Bot) -> None:
+        socket = self._sockets[bot]
         await socket.disconnect()
         await socket.wait()
-        del self._sockets[agent]
+        del self._sockets[bot]

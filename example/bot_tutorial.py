@@ -1,6 +1,5 @@
 from glhf.app import cmd
-from glhf.base import ClientProtocol
-from glhf.bot import Bot
+from glhf.base import Bot, ClientProtocol
 
 
 class MyBot(Bot):
