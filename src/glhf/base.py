@@ -5,11 +5,10 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import Any, Protocol
 
-from glhf.gui import PygameGUI
 from glhf.typing import GameStartDict, GameUpdateDict, QueueUpdateDict
 from glhf.utils.methods import asignalize, astreamify
 
-__all__ = ["ServerProtocol", "ClientProtocol", "Bot"]
+__all__ = ["ServerProtocol", "ClientProtocol", "HasGUI", "GUIProtocol", "Bot"]
 
 
 class ServerProtocol(Protocol):
@@ -43,10 +42,46 @@ class ClientProtocol(Protocol):
     def attack(self, start: int, end: int, is50: bool) -> asyncio.Task[None]: ...
 
 
-class GUIProtocol(Protocol): ...
+class HasGUI(Protocol):
+    gui: GUIProtocol | None
 
 
-@dataclass(frozen=True)
+class GUIProtocol(Protocol):
+    owner: HasGUI | None
+
+    def is_registered(self) -> bool:
+        return self.owner is not None
+
+    def register(self, owner: HasGUI) -> None:
+        if self.owner is not None:
+            raise ValueError("GUI is already registered")
+        if owner.gui is not None:
+            raise ValueError("Owner already has a GUI")
+        owner.gui = self
+        self.owner = owner
+
+    def deregister(self) -> None:
+        if self.owner is None:
+            raise ValueError("GUI is not registered")
+        self.owner.gui = None
+        self.owner = None
+
+    @abstractmethod
+    def game_start(self, data: GameStartDict) -> None: ...
+    @abstractmethod
+    def game_update(self, data: GameUpdateDict) -> None: ...
+
+    @abstractmethod
+    def game_over(self) -> None: ...
+
+    @abstractmethod
+    def connect(self) -> None: ...
+
+    @abstractmethod
+    def disconnect(self) -> None: ...
+
+
+@dataclass(unsafe_hash=True)
 class Bot(ABC):
     """The `Bot` class allows customization by overriding the `run` method for specific game interactions.
 
@@ -84,7 +119,8 @@ class Bot(ABC):
 
     id: str
     name: str
-    gui: PygameGUI | None = None
+    default_room: str = ""
+    gui: GUIProtocol | None = None
 
     # ============================================================
     # recieve
@@ -139,12 +175,8 @@ class Bot(ABC):
     async def start(self, server: ServerProtocol) -> None:
         try:
             client = await server.connect(self)
-            if self.gui:
-                self.gui.connect()
             await self.run(client)
         finally:
-            if self.gui:
-                self.gui.disconnect()
             await server.disconnect(self)
 
     @abstractmethod

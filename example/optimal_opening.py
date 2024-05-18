@@ -36,7 +36,7 @@ class AttackScheduler:
 
 class OptimalOpening(Bot):
     async def run(self, client: ClientProtocol) -> None:
-        client.join_private("" or token_urlsafe(3))
+        client.join_private(self.default_room or token_urlsafe(3))
 
         async for data in self.queue_update:
             if not data["isForcing"]:

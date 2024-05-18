@@ -10,7 +10,7 @@ from rich.console import Console
 from rich.style import Style
 from rich.text import Text
 
-from glhf.base import Bot, ServerProtocol
+from glhf.base import Bot, GUIProtocol, ServerProtocol
 from glhf.gui import PygameGUI
 from glhf.server import LocalServer, SocketioServer
 
@@ -19,14 +19,20 @@ USERNAME = "PsittaTestBot"
 
 
 class APP:
-    def __init__(self, console: Console) -> None:
-        self._console = console
+    def __init__(self, console: Console | None = None) -> None:
+        self._console = console or Console()
+
+        self._gui_target: int | None = None
+        self._gui_type: str = "pygame"
+
         self._server: ServerProtocol | None = None
         self._bots: list[Bot] = []
+
         self._server_types: dict[str, type[ServerProtocol]] = {
             "local": LocalServer,
             "socketio": SocketioServer,
         }
+        self._gui_types: dict[str, type[GUIProtocol]] = {"pygame": PygameGUI}
         self._bot_types = {bot.__name__: bot for bot in Bot.__subclasses__()}
 
         if not self._bot_types:
@@ -39,7 +45,7 @@ class APP:
             self._console.print(f"{i}: {k}")
 
     def show(self) -> None:
-        self._console.print(self._server, self._bots)
+        self._console.print(self._gui_type, self._server, self._bots)
 
     def start(self, debug: bool = False) -> None:
         if self._server is None:
@@ -53,10 +59,29 @@ class APP:
             )
             return
         try:
-            asyncio.run(start(self._server, self._bots), debug=debug)
+            if self._gui_target is not None:
+                gui = self._gui_types[self._gui_type]()
+                gui.connect()
+                gui.register(self._bots[self._gui_target])
+                asyncio.run(start(self._server, self._bots), debug=debug)
+                gui.disconnect()
+            else:
+                asyncio.run(start(self._server, self._bots), debug=debug)
         finally:
+            self._gui_target = None
             self._server = None
             self._bots = []
+
+    def gui(self, index: int | None = None, name: str = "pygame") -> None:
+        if index is None:
+            self._gui_target = index
+            self._console.print("gui cleared")
+            return
+        if name not in self._gui_types:
+            self._console.print(f"unknown gui: {name}")
+            return
+        self._gui_target = index
+        self._gui_type = name
 
     def server(
         self,
@@ -78,6 +103,7 @@ class APP:
         self,
         key: str = "",
         index: int = 0,
+        default_room: str = "",
         userid: str = USERID,
         username: str = USERNAME,
     ) -> None:
@@ -94,7 +120,7 @@ class APP:
             return
 
         try:
-            self._bots.append(bot_type(userid, username, PygameGUI()))
+            self._bots.append(bot_type(userid, username, default_room))
         except TypeError:
             self._console.print_exception()
 
@@ -108,8 +134,10 @@ async def start(server: ServerProtocol, bots: Sequence[Bot]) -> None:
     set_eager_task_factory(True)
 
     async with asyncio.TaskGroup() as g:
-        for bot in bots:
-            g.create_task(bot.start(server))
+        tasks = {g.create_task(bot.start(server)) for bot in bots}
+
+    for task in tasks:
+        task.result()
 
 
 def cmd(file: str = "") -> None:
@@ -149,6 +177,7 @@ def cmd(file: str = "") -> None:
 
         except Exception:
             console.print_exception()
+            raise
 
         finally:
             console.print()

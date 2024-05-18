@@ -4,15 +4,17 @@ import time
 from multiprocessing import Process, Queue
 from typing import Any
 
+from glhf.base import GUIProtocol
 from glhf.typing import GameStartDict, GameUpdateDict
 
 __all__ = ["PygameGUI"]
 
 
-class PygameGUI:
+class PygameGUI(GUIProtocol):
     def __init__(self) -> None:
         self.queue: Queue[Any] = Queue()
         self.process = Process(target=lazy_mainloop, args=(self.queue,))
+        self.owner = None
 
     def game_start(self, data: GameStartDict) -> None:
         self.queue.put(("game_start", data))

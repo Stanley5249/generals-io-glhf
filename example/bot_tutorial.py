@@ -4,7 +4,7 @@ from glhf.base import Bot, ClientProtocol
 
 class MyBot(Bot):
     async def run(self, client: ClientProtocol) -> None:
-        client.join_private("example")
+        client.join_private(self.default_room or "example")
 
         async for data in self.queue_update:
             if not data["isForcing"]:
