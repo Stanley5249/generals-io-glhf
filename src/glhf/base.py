@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from abc import abstractmethod
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Protocol
 
 from glhf.typing import GameStartDict, GameUpdateDict, QueueUpdateDict
@@ -89,11 +89,12 @@ class GUIProtocol(Protocol):
     def disconnect(self) -> None: ...
 
 
+@dataclass
 class BotProtocol(Protocol):
     id: str
     name: str
     default_room: str
-    gui: GUIProtocol | None
+    gui: GUIProtocol | None = field(repr=False, default=None)
 
     @methodlike
     def stars(self, data: dict[str, float]) -> Any:
@@ -149,8 +150,7 @@ class BotProtocol(Protocol):
     @abstractmethod
     async def run(self, client: ClientProtocol) -> None: ...
 
-    @abstractmethod
-    def __hash__(self) -> int: ...
+    async def hash(self) -> int: ...
 
 
 @dataclass(unsafe_hash=True)
@@ -192,7 +192,7 @@ class Bot(BotProtocol):
     id: str
     name: str
     default_room: str = ""
-    gui: GUIProtocol | None = None
+    gui: GUIProtocol | None = field(repr=False, default=None)
 
     # ============================================================
     # recieve
