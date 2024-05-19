@@ -5,7 +5,7 @@ from typing import Iterable, Sequence
 
 import igraph as ig
 from algorithm import make_graph, opening_moves
-from glhf.app import cmd
+from glhf.app import command
 from glhf.base import Bot, ClientProtocol
 from glhf.utils.maps import patch
 
@@ -84,4 +84,4 @@ class OptimalOpening(Bot):
 
 
 if __name__ == "__main__":
-    cmd()
+    command()

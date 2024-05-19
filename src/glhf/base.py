@@ -1,22 +1,29 @@
 from __future__ import annotations
 
 import asyncio
-from abc import ABC, abstractmethod
+from abc import abstractmethod
 from dataclasses import dataclass
 from typing import Any, Protocol
 
 from glhf.typing import GameStartDict, GameUpdateDict, QueueUpdateDict
-from glhf.utils.methods import asignalize, astreamify
+from glhf.utils.methods import asignalize, astreamify, methodlike
 
-__all__ = ["ServerProtocol", "ClientProtocol", "HasGUI", "GUIProtocol", "Bot"]
+__all__ = [
+    "ServerProtocol",
+    "ClientProtocol",
+    "HasGUI",
+    "GUIProtocol",
+    "BotProtocol",
+    "Bot",
+]
 
 
 class ServerProtocol(Protocol):
     @abstractmethod
-    async def connect(self, bot: Bot) -> ClientProtocol: ...
+    async def connect(self, bot: BotProtocol) -> ClientProtocol: ...
 
     @abstractmethod
-    async def disconnect(self, bot: Bot) -> None: ...
+    async def disconnect(self, bot: BotProtocol) -> None: ...
 
 
 class ClientProtocol(Protocol):
@@ -68,6 +75,7 @@ class GUIProtocol(Protocol):
 
     @abstractmethod
     def game_start(self, data: GameStartDict) -> None: ...
+
     @abstractmethod
     def game_update(self, data: GameUpdateDict) -> None: ...
 
@@ -81,8 +89,72 @@ class GUIProtocol(Protocol):
     def disconnect(self) -> None: ...
 
 
+class BotProtocol(Protocol):
+    id: str
+    name: str
+    default_room: str
+    gui: GUIProtocol | None
+
+    @methodlike
+    def stars(self, data: dict[str, float]) -> Any:
+        pass
+
+    @methodlike
+    def rank(self, data: dict[str, int]) -> Any:
+        pass
+
+    @methodlike
+    def chat_message(self, chat_room: str, data: dict[str, Any]) -> Any:
+        pass
+
+    @methodlike
+    def notify(self, data: Any) -> Any:
+        pass
+
+    @methodlike
+    def queue_update(self, data: QueueUpdateDict) -> Any:
+        pass
+
+    @methodlike
+    def pre_game_start(self) -> Any:
+        pass
+
+    @methodlike
+    def game_start(self, data: GameStartDict) -> Any:
+        pass
+
+    @methodlike
+    def game_update(self, data: GameUpdateDict) -> Any:
+        pass
+
+    @methodlike
+    def game_won(self) -> Any:
+        pass
+
+    @methodlike
+    def game_lost(self) -> Any:
+        pass
+
+    @methodlike
+    def game_over(self) -> Any:
+        pass
+
+    async def start(self, server: ServerProtocol) -> None:
+        try:
+            client = await server.connect(self)
+            await self.run(client)
+        finally:
+            await server.disconnect(self)
+
+    @abstractmethod
+    async def run(self, client: ClientProtocol) -> None: ...
+
+    @abstractmethod
+    def __hash__(self) -> int: ...
+
+
 @dataclass(unsafe_hash=True)
-class Bot(ABC):
+class Bot(BotProtocol):
     """The `Bot` class allows customization by overriding the `run` method for specific game interactions.
 
     Subclassing `Bot` provides additional functionality:
@@ -126,24 +198,9 @@ class Bot(ABC):
     # recieve
     # ============================================================
 
-    def stars(self, data: dict[str, float]) -> None:
-        pass
-
-    def rank(self, data: dict[str, int]) -> None:
-        pass
-
-    def chat_message(self, chat_room: str, data: dict[str, Any]) -> None:
-        pass
-
-    def notify(self, data: Any) -> None:
-        pass
-
     @astreamify
     def queue_update(self, data: QueueUpdateDict) -> QueueUpdateDict:
         return data
-
-    def pre_game_start(self) -> None:
-        pass
 
     @astreamify
     def game_start(self, data: GameStartDict) -> GameStartDict:
@@ -171,13 +228,3 @@ class Bot(ABC):
         self.game_update.close()
         if self.gui:
             self.gui.game_over()
-
-    async def start(self, server: ServerProtocol) -> None:
-        try:
-            client = await server.connect(self)
-            await self.run(client)
-        finally:
-            await server.disconnect(self)
-
-    @abstractmethod
-    async def run(self, client: ClientProtocol) -> None: ...

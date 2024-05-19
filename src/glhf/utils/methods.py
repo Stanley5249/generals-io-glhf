@@ -34,11 +34,15 @@ class MethodLike[T, **P, R](Protocol):
     ) -> Callable[P, R]: ...
 
 
-class MethodDescriptor[T, **P, R](MethodLike[T, P, R]):
-    wrapper: Callable[..., Callable[P, R]]
+def methodlike[T, **P, R](m: Callable[Concatenate[T, P], R]) -> MethodLike[T, P, R]:
+    return m
 
-    def __init_subclass__(cls, /, wrapper: Callable[..., Callable[P, R]]) -> None:
-        cls.wrapper = wrapper
+
+class methodify[T, **P, R, F]:
+    factory: Callable[..., F]
+
+    def __init_subclass__(cls, /, factory: Callable[..., F]) -> None:
+        cls.factory = factory
 
     def __init__(self, wrapped: Callable[Concatenate[T, P], R]) -> None:
         self.wrapped = wrapped
@@ -46,19 +50,23 @@ class MethodDescriptor[T, **P, R](MethodLike[T, P, R]):
     def __set_name__(self, owner: type[T], name: str) -> None:
         self.name = "_" + name
 
+    @overload
+    def __get__(
+        self, instance: None, owner: type[T]
+    ) -> Callable[Concatenate[T, P], R]: ...
+
+    @overload
+    def __get__(self, instance: T, owner: type[T] | None = None) -> F: ...
+
     def __get__(self, instance: T | None, owner: type[T] | None = None) -> Any:
         if instance is None:
             return self.wrapped
         try:
             x = getattr(instance, self.name)
         except AttributeError:
-            x = self.wrapper(partial(self.wrapped, instance))
+            x = self.factory(partial(self.wrapped, instance))
             setattr(instance, self.name, x)
         return x
-
-
-def methodlike[T, **P, R](m: Callable[Concatenate[T, P], R]) -> MethodLike[T, P, R]:
-    return m
 
 
 # ============================================================
@@ -131,11 +139,11 @@ class Signal[**P, R]:
         self.event.clear()
 
 
-class streamify[T, **P, R](MethodDescriptor[T, P, R], wrapper=Stream[P, R]):
+class streamify[T, **P, R](methodify[T, P, R, Stream[P, R]], factory=Stream[P, R]):
     pass
 
 
-class signalize[T, **P, R](MethodDescriptor[T, P, R], wrapper=Signal[P, R]):
+class signalize[T, **P, R](methodify[T, P, R, Signal[P, R]], factory=Signal[P, R]):
     pass
 
 
@@ -209,11 +217,11 @@ class ASignal[**P, R]:
         self.event.clear()
 
 
-class astreamify[T, **P, R](MethodDescriptor[T, P, R], wrapper=AStream[P, R]):
+class astreamify[T, **P, R](methodify[T, P, R, AStream[P, R]], factory=AStream[P, R]):
     pass
 
 
-class asignalize[T, **P, R](MethodDescriptor[T, P, R], wrapper=ASignal[P, R]):
+class asignalize[T, **P, R](methodify[T, P, R, ASignal[P, R]], factory=ASignal[P, R]):
     pass
 
 

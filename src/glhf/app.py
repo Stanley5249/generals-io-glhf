@@ -140,7 +140,7 @@ async def start(server: ServerProtocol, bots: Sequence[Bot]) -> None:
         task.result()
 
 
-def cmd(file: str = "") -> None:
+def command(file: str = "") -> None:
     if file:
         location = pathlib.Path(file)
         sys.path.append(str(location.parent.resolve()))

@@ -2,7 +2,7 @@ from typing import Any
 
 from socketio import AsyncClient
 
-from glhf.base import Bot, ClientProtocol
+from glhf.base import BotProtocol, ClientProtocol
 from glhf.typing import GameStartDict, GameUpdateDict, QueueUpdateDict
 from glhf.utils.methods import to_task
 
@@ -11,7 +11,7 @@ BOTKEY = "sd09fjd203i0ejwi_changeme"
 
 
 class SocketioClient(ClientProtocol):
-    def __init__(self, bot: Bot, socket: AsyncClient) -> None:
+    def __init__(self, bot: BotProtocol, socket: AsyncClient) -> None:
         self._bot = bot
         self._socket = socket
         self._queue_id = ""
@@ -92,13 +92,13 @@ class SocketioClient(ClientProtocol):
 
 class SocketioServer:
     def __init__(self) -> None:
-        self._sockets: dict[Bot, AsyncClient] = {}
+        self._sockets: dict[BotProtocol, AsyncClient] = {}
 
     # ============================================================
     # run
     # ============================================================
 
-    async def connect(self, bot: Bot) -> SocketioClient:
+    async def connect(self, bot: BotProtocol) -> SocketioClient:
         socket = AsyncClient()
         client = SocketioClient(bot, socket)
         socket.event(client.stars)
@@ -116,7 +116,7 @@ class SocketioServer:
         self._sockets[bot] = socket
         return client
 
-    async def disconnect(self, bot: Bot) -> None:
+    async def disconnect(self, bot: BotProtocol) -> None:
         socket = self._sockets[bot]
         await socket.disconnect()
         await socket.wait()

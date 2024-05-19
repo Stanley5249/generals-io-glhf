@@ -13,7 +13,7 @@ import igraph as ig
 import ortools.sat.python.cp_model as cp
 from bidict import KeyDuplicationError, ValueDuplicationError, bidict
 
-from glhf.base import Bot, ClientProtocol, ServerProtocol
+from glhf.base import BotProtocol, ClientProtocol, ServerProtocol
 from glhf.typing import GameStartDict, GameUpdateDict, QueueUpdateDict
 from glhf.utils.maps import make_diff
 from glhf.utils.methods import to_task
@@ -177,14 +177,14 @@ class User:
 
 @dataclass(slots=True)
 class Player:
-    bot: Bot
+    bot: BotProtocol
     user: User
     queue: Queue = field(default_factory=Queue)
     game: Game = field(default_factory=Game)
 
 
 class LocalClient(ClientProtocol):
-    def __init__(self, bot: Bot, server: LocalServer) -> None:
+    def __init__(self, bot: BotProtocol, server: LocalServer) -> None:
         self._bot = bot
         self._server = server
         self._queue_id = ""
@@ -275,8 +275,8 @@ class LocalServer(ServerProtocol):
         self.row = row
         self.col = col
 
-        self.userids: bidict[Bot, str] = bidict()
-        self.bots: bidict[str, Bot] = self.userids.inverse
+        self.userids: bidict[BotProtocol, str] = bidict()
+        self.bots: bidict[str, BotProtocol] = self.userids.inverse
 
         self.users: dict[str, User] = {}
         self.players: dict[str, Player] = {}
@@ -337,17 +337,17 @@ class LocalServer(ServerProtocol):
     # ============================================================
 
     @to_task
-    async def stars_and_rank(self, bot: Bot) -> None:
+    async def stars_and_rank(self, bot: BotProtocol) -> None:
         pass
 
     @to_task
-    async def set_username(self, bot: Bot) -> None:
+    async def set_username(self, bot: BotProtocol) -> None:
         if self.userids[bot] != bot.id:
             raise ValueError("userid mismatch")
         self.users[bot.id].name = bot.name
 
     @to_task
-    async def join_private(self, bot: Bot, queue_id: str) -> None:
+    async def join_private(self, bot: BotProtocol, queue_id: str) -> None:
         if self.userids[bot] != bot.id:
             raise ValueError("userid mismatch")
         game_queue = self.game_queues.setdefault(queue_id, [])
@@ -358,7 +358,7 @@ class LocalServer(ServerProtocol):
 
     @to_task
     async def set_force_start(
-        self, bot: Bot, queue_id: str, do_force: bool
+        self, bot: BotProtocol, queue_id: str, do_force: bool
     ) -> None:
         try:
             userid = self.userids[bot]
@@ -374,7 +374,7 @@ class LocalServer(ServerProtocol):
         self._queue_update(queue_id)
 
     @to_task
-    async def leave_game(self, bot: Bot) -> None:
+    async def leave_game(self, bot: BotProtocol) -> None:
         try:
             userid = self.userids[bot]
         except KeyError:
@@ -386,7 +386,7 @@ class LocalServer(ServerProtocol):
             raise
 
     @to_task
-    async def surrender(self, bot: Bot) -> None:
+    async def surrender(self, bot: BotProtocol) -> None:
         try:
             userid = self.userids[bot]
         except KeyError:
@@ -398,7 +398,7 @@ class LocalServer(ServerProtocol):
             raise
 
     @to_task
-    async def attack(self, bot: Bot, start: int, end: int, is50: bool) -> None:
+    async def attack(self, bot: BotProtocol, start: int, end: int, is50: bool) -> None:
         try:
             userid = self.userids[bot]
         except KeyError:
@@ -498,7 +498,7 @@ class LocalServer(ServerProtocol):
     # run
     # ============================================================
 
-    async def connect(self, bot: Bot) -> LocalClient:
+    async def connect(self, bot: BotProtocol) -> LocalClient:
         try:
             self.userids.put(bot, bot.id)
         except ValueDuplicationError:
@@ -512,7 +512,7 @@ class LocalServer(ServerProtocol):
         self.players[bot.id] = Player(bot, user)
         return client
 
-    async def disconnect(self, bot: Bot) -> None:
+    async def disconnect(self, bot: BotProtocol) -> None:
         if self.userids[bot] != bot.id:
             raise ValueError("userid mismatch")
         del self.userids[bot]
