@@ -1,33 +1,85 @@
 # GLHF | Generals.io Bot Framework
 
-:warning: **NOTE: This is a template README and the code is still a work in progress.**
+![PyPI - Python Version](https://img.shields.io/pypi/pyversions/glhf)
+![PyPI - Version](https://img.shields.io/pypi/v/glhf)
 
-Short description of the repository.
-
+Empowering seamless bot-server interactions with customizable workflows, all designed to elevate your automation experience effortlessly.
 
 ## Table of Contents
 
-- [Installation](#installation)
-- [Usage](#usage)
-- [Contributing](#contributing)
-- [License](#license)
+- [GLHF | Generals.io Bot Framework](#glhf--generalsio-bot-framework)
+  - [Table of Contents](#table-of-contents)
+  - [Installation](#installation)
+    - [Install from PyPI](#install-from-pypi)
+    - [Clone the Repository and Install from Source](#clone-the-repository-and-install-from-source)
+  - [Features](#features)
+    - [Example Bots](#example-bots)
+    - [`glhf.sever`](#glhfsever)
+    - [`glhf.gui`](#glhfgui)
+    - [`glhf.app`](#glhfapp)
+  - [Contributing](#contributing)
+  - [License](#license)
 
 ## Installation
 
-Instructions on how to install and set up the project.
+To have examples on your machine, it is recommended to clone the repository.
 
-```
+### Install from PyPI
+
+```sh
 pip install glhf
 ```
 
-## Usage
+### Clone the Repository and Install from Source
 
-Instructions on how to use the project, including any relevant examples or code snippets.
+```sh
+git clone https://github.com/Stanley5249/generals-io-glhf.git
+cd generals-io-glhf
+pip install .
+```
+
+## Features
+
+This project consists of several components, each with its own set of features. Below is a detailed breakdown:
+
+| Status | Type                 |
+| :----: | -------------------- |
+|   ✅    | Complete             |
+|   ⚠️    | Partially Functional |
+|   📅    | Planned              |
+
+### Example Bots
+
+| Component        | Status | Description                                           |
+| ---------------- | :----: | ----------------------------------------------------- |
+| `SurrenderBot`   |   ✅    | ...                                                   |
+| `OptimalOpening` |   ✅    | Compute optimal strategy paths for the first 25 turns |
+| Human.exe        |   📅    | Plan for future integration                           |
+
+### `glhf.sever`
+
+| Component        | Status | Description                    |
+| ---------------- | :----: | ------------------------------ |
+| `SocketioServer` |   ✅    | Connect to official site       |
+| `LocalServer`    |   ⚠️    | Simulate official site locally |
+
+### `glhf.gui`
+| Component   | Status | Description                     |
+| ----------- | :----: | ------------------------------- |
+| `PygameGUI` |   ⚠️    | Display only map during in-game |
+
+
+### `glhf.app`
+| Component | Status | Description                               |
+| --------- | :----: | ----------------------------------------- |
+| `APP`     |   ⚠️    | Integrate server, GUI, and bots           |
+| `command` |   ⚠️    | Provide command line tool wrapper for APP |
+
 
 ## Contributing
 
-Guidelines for contributing to the project, including information on how to submit pull requests and report issues.
+Your feedback and contributions are highly valued as the project continues to evolve.
 
 ## License
 
-Information about the license under which the project is distributed.
+This project is licensed under the GNU General Public License Version 2.
