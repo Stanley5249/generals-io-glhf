@@ -2,6 +2,7 @@ import asyncio
 import importlib.util
 import pathlib
 import sys
+from contextlib import nullcontext
 from inspect import isabstract
 from typing import Any, Literal, Sequence
 
@@ -14,9 +15,6 @@ from rich.text import Text
 from glhf.base import BotProtocol, GUIProtocol, ServerProtocol
 from glhf.gui import PygameGUI
 from glhf.server import LocalServer, SocketioServer
-
-USERID = "h4K1gOyHNnkGngym8fUuYA"
-USERNAME = "PsittaTestBot"
 
 
 def all_subclasses(cls: type[Any]) -> list[type[Any]]:
@@ -70,15 +68,26 @@ class APP:
                 f"No bots added. Use the '{self.bot_add.__name__}' command to add a bot."
             )
             return
+
+        if self._gui_target is not None:
+            gui = self._gui_options[self._gui_type]()
+            gui.register(self._bot_list[self._gui_target])
+        else:
+            gui = None
+
         try:
-            if self._gui_target is not None:
-                gui = self._gui_options[self._gui_type]()
-                gui.connect()
-                gui.register(self._bot_list[self._gui_target])
-                asyncio.run(start(self._server, self._bot_list), debug=debug)
-                gui.disconnect()
+            coro = start(self._server, self._bot_list, gui)
+
+            loop = asyncio.get_event_loop()
+
+            if loop.is_running():
+                loop.set_debug(debug)
+                task = loop.create_task(coro)
+                task.add_done_callback(lambda t: t.result())
+
             else:
-                asyncio.run(start(self._server, self._bot_list), debug=debug)
+                asyncio.run(coro, debug=debug)
+
         finally:
             self._gui_target = None
             self._server = None
@@ -123,9 +132,9 @@ class APP:
     def bot_add(
         self,
         key: str | int,
+        userid: str,
+        username: str,
         default_room: str = "",
-        userid: str = USERID,
-        username: str = USERNAME,
     ) -> None:
         if isinstance(key, int):
             if 0 <= key < len(self._bot_factory_list):
@@ -167,14 +176,17 @@ def set_eager_task_factory(is_eager: bool) -> None:
     loop.set_task_factory(asyncio.eager_task_factory if is_eager else None)  # type: ignore
 
 
-async def start(server: ServerProtocol, bots: Sequence[BotProtocol]) -> None:
+async def start(
+    server: ServerProtocol, bots: Sequence[BotProtocol], gui: GUIProtocol | None
+) -> None:
     set_eager_task_factory(True)
 
-    async with asyncio.TaskGroup() as g:
-        tasks = {g.create_task(bot.start(server)) for bot in bots}
+    with gui or nullcontext():
+        async with asyncio.TaskGroup() as g:
+            tasks = {g.create_task(bot.start(server)) for bot in bots}
 
-    for task in tasks:
-        task.result()
+        for task in tasks:
+            task.result()
 
 
 def command(file: str = "") -> None:

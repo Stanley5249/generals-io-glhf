@@ -88,13 +88,23 @@ class GUIProtocol(Protocol):
     @abstractmethod
     def disconnect(self) -> None: ...
 
+    def __enter__(self) -> GUIProtocol:
+        if not self.is_registered():
+            raise ValueError("GUI is not registered")
+
+        self.connect()
+        return self
+
+    def __exit__(self, exc_type, exc_value, traceback) -> None:
+        self.disconnect()
+
 
 @dataclass
 class BotProtocol(Protocol):
     id: str
     name: str
-    default_room: str
-    gui: GUIProtocol | None = field(repr=False, default=None)
+    default_room: str = ""
+    gui: GUIProtocol | None = None
 
     @methodlike
     def stars(self, data: dict[str, float]) -> Any:
@@ -150,7 +160,7 @@ class BotProtocol(Protocol):
     @abstractmethod
     async def run(self, client: ClientProtocol) -> None: ...
 
-    async def hash(self) -> int: ...
+    def __hash__(self) -> int: ...
 
 
 @dataclass(unsafe_hash=True)
