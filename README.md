@@ -17,6 +17,8 @@ Empowering seamless bot-server interactions with customizable workflows, all des
     - [`glhf.sever`](#glhfsever)
     - [`glhf.gui`](#glhfgui)
     - [`glhf.app`](#glhfapp)
+- [Troubleshooting](#troubleshooting)
+  - [\[ImportError: DLL load failed while importing \_igraph\]{https://python.igraph.org/en/latest/install.html#q-i-am-trying-to-install-igraph-on-windows-but-am-getting-dll-import-errors}](#importerror-dll-load-failed-while-importing-_igraphhttpspythonigraphorgenlatestinstallhtmlq-i-am-trying-to-install-igraph-on-windows-but-am-getting-dll-import-errors)
   - [Contributing](#contributing)
   - [License](#license)
 
@@ -75,6 +77,9 @@ This project consists of several components, each with its own set of features. 
 | `APP`     |   ⚠️    | Integrate server, GUI, and bots           |
 | `command` |   ⚠️    | Provide command line tool wrapper for APP |
 
+# Troubleshooting
+
+## [ImportError: DLL load failed while importing _igraph]{https://python.igraph.org/en/latest/install.html#q-i-am-trying-to-install-igraph-on-windows-but-am-getting-dll-import-errors}
 
 ## Contributing
 
