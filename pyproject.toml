@@ -6,19 +6,18 @@ build-backend = "setuptools.build_meta"
 name = "glhf"
 version = "0.0.1.dev6"
 dependencies = [
-  "pygame-ce==2.4.1",
-  "python-socketio[asyncio_client]==5.11.1",
-  "ortools==9.9.3963",
-  "igraph==0.11.4",
-  "fire==0.6.0",
-  "rich==13.7.1",
+    "fire>=0.7.0",
+    "igraph>=0.11.6",
+    "ortools>=9.11.4210",
+    "pygame-ce>=2.5.1",
+    "python-socketio[asyncio-client]>=5.11.4",
+    "rich>=13.9.1",
 ]
 requires-python = ">= 3.12"
 authors = [{ name = "Hong-Chang Huang", email = "seer852741@gmail.com" }]
 description = "Good luck, have fun! A generals.io bot framework."
 readme = "README.md"
 license = { file = "LICENSE" }
-keywords = ["egg", "bacon", "sausage", "tomatoes", "Lobster Thermidor"]
 classifiers = [
   "Development Status :: 2 - Pre-Alpha",
   "Topic :: Software Development :: Libraries",
