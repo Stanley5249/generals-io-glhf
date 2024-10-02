@@ -14,7 +14,7 @@ from rich.text import Text
 
 from glhf.base import BotProtocol, GUIProtocol, ServerProtocol
 from glhf.gui import PygameGUI
-from glhf.server import LocalServer, SocketioServer
+from glhf.server import LocalServer, SocketIOServer
 
 
 def all_subclasses(cls: type[Any]) -> list[type[Any]]:
@@ -48,7 +48,7 @@ class APP:
 
         self._server_options: dict[str, type[ServerProtocol]] = {
             "local": LocalServer,
-            "socketio": SocketioServer,
+            "socketio": SocketIOServer,
         }
         self._gui_options: dict[str, type[GUIProtocol]] = {
             "pygame": PygameGUI,

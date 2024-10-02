@@ -90,7 +90,7 @@ class SocketioClient(ClientProtocol):
         await self._socket.emit("attack", (start, end, is50))
 
 
-class SocketioServer:
+class SocketIOServer:
     def __init__(self) -> None:
         self._sockets: dict[BotProtocol, AsyncClient] = {}
 
