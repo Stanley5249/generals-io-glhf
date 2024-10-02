@@ -215,6 +215,7 @@ def scheduling_pcvrp(
     t_end = time.monotonic()
 
     solver.parameters.max_time_in_seconds = timeout - (t_end - t_start)
+    solver.parameters.cp_model_presolve = False
     status = solver.solve(model, callback)
 
     status_name = solver.status_name()
