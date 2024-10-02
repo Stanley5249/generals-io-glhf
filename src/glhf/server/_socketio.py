@@ -16,6 +16,9 @@ class SocketioClient(ClientProtocol):
         self._socket = socket
         self._queue_id = ""
 
+    def unknown_event(self, event: str, data: Any) -> None:
+        print(f"event {{{event!r}: {data}}}")
+
     # ============================================================
     # recieve
     # ============================================================
@@ -101,6 +104,7 @@ class SocketIOServer:
     async def connect(self, bot: BotProtocol) -> SocketioClient:
         socket = AsyncClient()
         client = SocketioClient(bot, socket)
+        socket.on("*", client.unknown_event)
         socket.event(client.stars)
         socket.event(client.rank)
         socket.event(client.chat_message)
