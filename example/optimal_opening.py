@@ -80,7 +80,7 @@ class OptimalOpening(Bot):
             if atk is not None:
                 client.attack(*atk)
 
-        client.leave_game()
+        await client.leave_game()
 
 
 if __name__ == "__main__":
