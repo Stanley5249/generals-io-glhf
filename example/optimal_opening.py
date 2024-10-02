@@ -5,7 +5,7 @@ from typing import Iterable, Sequence
 
 import igraph as ig
 from algorithm import make_graph, opening_moves
-from glhf.app import command
+
 from glhf.base import Bot, ClientProtocol
 from glhf.utils.maps import patch
 
@@ -84,4 +84,17 @@ class OptimalOpening(Bot):
 
 
 if __name__ == "__main__":
-    command()
+    from glhf.app import start
+    from glhf.gui import PygameGUI
+    from glhf.server import SocketIOServer
+
+    USERID = "ua42"
+    USERNAME = "Ultimate Answer"
+
+    server = SocketIOServer()
+    bot = OptimalOpening(USERID, USERNAME)
+    gui = PygameGUI()
+
+    gui.register(bot)
+
+    asyncio.run(start(server, [bot], gui))
